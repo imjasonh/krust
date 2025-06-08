@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use krust::{
+    auth::{DefaultKeychain, Keychain},
     builder::{get_rust_target_triple, RustBuilder},
     cli::{Cli, Commands},
     config::Config,
@@ -58,9 +59,9 @@ async fn main() -> Result<()> {
                 format!("{}/{}:latest", repo, project_name)
             };
 
-            // Initialize registry client early for platform detection
-            let auth = oci_distribution::secrets::RegistryAuth::Anonymous;
-            let mut registry_client = RegistryClient::new(auth)?;
+            // Initialize registry client and keychain
+            let keychain = DefaultKeychain::new();
+            let mut registry_client = RegistryClient::new()?;
 
             // Determine platforms to build for
             let platforms = if let Some(platforms) = platform {
@@ -72,7 +73,16 @@ async fn main() -> Result<()> {
                     "Detecting available platforms from base image: {}",
                     base_image
                 );
-                match registry_client.get_image_platforms(&base_image).await {
+                // Get auth for the base image registry
+                let base_auth = keychain
+                    .resolve(&base_image)?
+                    .authorization()?
+                    .to_registry_auth();
+
+                match registry_client
+                    .get_image_platforms(&base_image, &base_auth)
+                    .await
+                {
                     Ok(detected_platforms) => {
                         if detected_platforms.is_empty() {
                             info!("No platforms detected, using defaults");
@@ -132,8 +142,14 @@ async fn main() -> Result<()> {
                     let platform_tag = format!("platform-{}", platform_str.replace('/', "-"));
                     let platform_ref = format!("{}:{}", base_ref, platform_tag);
 
+                    // Get auth for the target registry
+                    let push_auth = keychain
+                        .resolve(&platform_ref)?
+                        .authorization()?
+                        .to_registry_auth();
+
                     let (digest_ref, manifest_size) = registry_client
-                        .push_image(&platform_ref, config_data, layers)
+                        .push_image(&platform_ref, config_data, layers, &push_auth)
                         .await?;
 
                     // Parse platform string
@@ -171,8 +187,14 @@ async fn main() -> Result<()> {
             if !no_push {
                 info!("Creating and pushing manifest list...");
 
+                // Get auth for the final image push
+                let final_auth = keychain
+                    .resolve(&image_ref)?
+                    .authorization()?
+                    .to_registry_auth();
+
                 let manifest_list_ref = registry_client
-                    .push_manifest_list(&image_ref, manifest_descriptors)
+                    .push_manifest_list(&image_ref, manifest_descriptors, &final_auth)
                     .await?;
 
                 // Output the manifest list reference

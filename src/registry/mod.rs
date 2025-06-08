@@ -10,14 +10,12 @@ mod tests;
 
 pub struct RegistryClient {
     client: Client,
-    #[allow(dead_code)]
-    auth: RegistryAuth,
 }
 
 impl RegistryClient {
-    pub fn new(auth: RegistryAuth) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let client = Client::new(oci_distribution::client::ClientConfig::default());
-        Ok(Self { client, auth })
+        Ok(Self { client })
     }
 
     pub async fn push_image(
@@ -25,12 +23,19 @@ impl RegistryClient {
         image_ref: &str,
         config_data: Vec<u8>,
         layers: Vec<(Vec<u8>, String)>,
+        auth: &RegistryAuth,
     ) -> Result<(String, usize)> {
         let reference: Reference = image_ref
             .parse()
             .context("Failed to parse image reference")?;
 
         info!("Pushing image to {}", reference);
+
+        // Authenticate with the registry
+        self.client
+            .auth(&reference, auth, oci_distribution::RegistryOperation::Push)
+            .await
+            .context("Failed to authenticate with registry")?;
 
         // Push config blob
         let config_digest = format!("sha256:{}", sha256::digest(&config_data));
@@ -110,9 +115,16 @@ impl RegistryClient {
         &mut self,
         image_ref: &str,
         manifest_descriptors: Vec<crate::manifest::ManifestDescriptor>,
+        auth: &RegistryAuth,
     ) -> Result<String> {
         let reference = Reference::from_str(image_ref)
             .context(format!("Failed to parse image reference: {}", image_ref))?;
+
+        // Authenticate with the registry
+        self.client
+            .auth(&reference, auth, oci_distribution::RegistryOperation::Push)
+            .await
+            .context("Failed to authenticate with registry")?;
 
         // Create the image index
         let index = crate::manifest::ImageIndex::new(manifest_descriptors);
@@ -180,7 +192,11 @@ impl RegistryClient {
     }
 
     /// Fetch the manifest for an image and extract available platforms
-    pub async fn get_image_platforms(&mut self, image_ref: &str) -> Result<Vec<String>> {
+    pub async fn get_image_platforms(
+        &mut self,
+        image_ref: &str,
+        auth: &RegistryAuth,
+    ) -> Result<Vec<String>> {
         let reference: Reference = image_ref
             .parse()
             .context("Failed to parse image reference")?;
@@ -190,7 +206,7 @@ impl RegistryClient {
         // Pull the manifest
         let (manifest, _) = self
             .client
-            .pull_manifest(&reference, &self.auth)
+            .pull_manifest(&reference, auth)
             .await
             .context("Failed to pull manifest")?;
 

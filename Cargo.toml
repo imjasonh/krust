@@ -26,6 +26,7 @@ dirs = "6.0"
 toml = "0.8"
 which = "8.0"
 tempfile = "3.9"
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3.9"
