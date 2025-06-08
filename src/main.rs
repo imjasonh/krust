@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
                 .unwrap_or(config.base_image.clone());
 
             // Determine the base repository name (without any tag)
-            let base_repo = if let Some(image) = image {
+            let target_repo = if let Some(image) = image {
                 // Use explicit image if provided, strip any tag/digest
                 if let Some(pos) = image.rfind([':', '@']) {
                     image[..pos].to_string()
@@ -129,11 +129,11 @@ async fn main() -> Result<()> {
                     let layers = vec![(layer_data, manifest.layers[0].media_type.clone())];
 
                     // Get auth for the target registry
-                    let push_auth = resolve_auth(&base_repo)?;
+                    let push_auth = resolve_auth(&target_repo)?;
 
                     // Push platform image by digest only (no tags)
                     let (digest_ref, manifest_size) = registry_client
-                        .push_image_by_digest(&base_repo, config_data, layers, &push_auth)
+                        .push_image_by_digest(&target_repo, config_data, layers, &push_auth)
                         .await?;
 
                     // Parse platform string
@@ -174,11 +174,11 @@ async fn main() -> Result<()> {
                 // Determine the target for the manifest list
                 let manifest_target = if let Some(tag_name) = tag {
                     // If --tag is specified, push to that tag
-                    format!("{}:{}", base_repo, tag_name)
+                    format!("{}:{}", target_repo, tag_name)
                 } else {
                     // If no tag specified, push digest-only by using a temporary tag
                     // We'll use a temporary tag and return the digest reference
-                    format!("{}:temp-{}", base_repo, std::process::id())
+                    format!("{}:temp-{}", target_repo, std::process::id())
                 };
 
                 // Get auth for the final image push
