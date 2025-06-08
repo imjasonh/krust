@@ -80,11 +80,14 @@ async fn main() -> Result<()> {
                 let builder =
                     RustBuilder::new(&project_path, &target).with_cargo_args(cargo_args.clone());
 
-                let binary_path = builder.build()?;
+                let build_result = builder.build()?;
 
                 // Build container image for this platform
-                let image_builder =
-                    ImageBuilder::new(binary_path, base_image.clone(), platform_str.clone());
+                let image_builder = ImageBuilder::new(
+                    build_result.binary_path,
+                    base_image.clone(),
+                    platform_str.clone(),
+                );
 
                 let (config_data, layer_data, manifest) = image_builder.build()?;
 

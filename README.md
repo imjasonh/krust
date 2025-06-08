@@ -108,6 +108,9 @@ krust build --platform linux/amd64,linux/arm64
 
 # Or specify platforms separately
 krust build --platform linux/amd64 --platform linux/arm64
+
+# Default behavior builds for both amd64 and arm64
+krust build
 ```
 
 ### Build with custom cargo arguments
@@ -121,6 +124,30 @@ krust build -- --features=prod
 - `linux/amd64` (x86_64-unknown-linux-musl)
 - `linux/arm64` (aarch64-unknown-linux-musl)
 - `linux/arm/v7` (armv7-unknown-linux-musleabihf)
+
+### Multi-Architecture Images
+
+When building for multiple platforms, krust:
+1. Builds each platform separately with its own binary
+2. Pushes platform-specific images with appropriate tags
+3. Creates references that Docker/Kubernetes can use to automatically select the right architecture
+
+Note: Full OCI image index (manifest list) support is planned for a future release.
+
+## Build Process
+
+krust builds your Rust application in an isolated environment:
+
+1. **Temporary build directory** - Each build uses a unique temporary directory via `--target-dir`
+2. **Static compilation** - Builds with `RUSTFLAGS="-C target-feature=+crt-static"` for musl targets
+3. **Cross-compilation** - Automatically configures the appropriate linker for the target platform
+4. **Binary extraction** - Copies the built binary from the temp directory for packaging
+5. **Container creation** - Packages the binary into a minimal OCI image
+
+This approach ensures:
+- No conflicts between concurrent builds
+- Clean builds without interference from previous compilations
+- Safe parallel execution of multiple krust instances
 
 ## Static Binaries
 
@@ -195,6 +222,8 @@ When determining the base image, krust uses this precedence order:
 - **Cross-platform** - Supports multiple architectures (amd64, arm64, arm/v7)
 - **Minimal images** - Uses distroless base images for security and size
 - **OCI compliant** - Works with any OCI-compliant container registry
+- **Isolated builds** - Each build uses a temporary directory to avoid conflicts
+- **Concurrent builds** - Multiple builds can run safely in parallel
 
 ## Example
 

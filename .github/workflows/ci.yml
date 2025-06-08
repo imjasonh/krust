@@ -25,16 +25,10 @@ jobs:
       with:
         toolchain: ${{ matrix.rust }}
         targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
-    - name: Install cross-compilation tools (Ubuntu x64)
-      if: matrix.os == 'ubuntu-latest'
+    - name: Install cross-compilation tools for both architectures
       run: |
         sudo apt-get update
-        sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
-    - name: Install cross-compilation tools (Ubuntu ARM)
-      if: matrix.os == 'ubuntu-24.04-arm'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y musl-tools gcc-x86-64-linux-gnu
+        sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
