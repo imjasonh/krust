@@ -27,19 +27,23 @@ fn test_resolve_auth_anonymous() -> Result<()> {
 
     // Should resolve to anonymous
     let auth = resolve_auth("docker.io/library/alpine")?;
-    
+
     // Debug output for CI
     if !matches!(auth, RegistryAuth::Anonymous) {
         eprintln!("Expected Anonymous auth but got: {:?}", auth);
         eprintln!("DOCKER_CONFIG: {:?}", env::var("DOCKER_CONFIG"));
         eprintln!("REGISTRY_AUTH_FILE: {:?}", env::var("REGISTRY_AUTH_FILE"));
         eprintln!("HOME: {:?}", env::var("HOME"));
-        
+
         // Check if there's a Docker config in the temp dir
         let config_path = tmp_dir.path().join("config.json");
-        eprintln!("Config exists at {:?}: {}", config_path, config_path.exists());
+        eprintln!(
+            "Config exists at {:?}: {}",
+            config_path,
+            config_path.exists()
+        );
     }
-    
+
     assert!(matches!(auth, RegistryAuth::Anonymous));
 
     // Restore env vars
