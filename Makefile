@@ -94,3 +94,15 @@ check-code:
 
 # Run all checks (format, lint, test)
 check: check-fmt lint test
+
+push-ttl:
+	@echo "Building and pushing to ttl.sh..."
+	KRUST_REPO=ttl.sh/jason cargo run build example/hello-krust
+
+push-gar:
+	@echo "Building and pushing to Google Artifact Registry..."
+	KRUST_REPO=us-central1-docker.pkg.dev/jason-chainguard/krust cargo run build example/hello-krust
+
+push-cgr:
+	@echo "Building and pushing to Chainguard registry..."
+	KRUST_REPO=cgr.dev/imjasonh.dev/krust cargo run build example/hello-krust

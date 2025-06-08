@@ -478,14 +478,18 @@ impl Client {
         data: &[u8],
         digest: &str,
     ) -> Result<String> {
-        match self.push_blob_chunked(image_ref, data, digest).await {
-            Ok(url) => Ok(url),
-            Err(OciDistributionError::SpecViolationError(violation)) => {
-                warn!(?violation, "Registry is not respecting the OCI Distribution Specification when doing chunked push operations");
-                warn!("Attempting monolithic push");
-                self.push_blob_monolithically(image_ref, data, digest).await
+        if self.config.use_chunked_uploads {
+            match self.push_blob_chunked(image_ref, data, digest).await {
+                Ok(url) => Ok(url),
+                Err(OciDistributionError::SpecViolationError(violation)) => {
+                    warn!(?violation, "Registry is not respecting the OCI Distribution Specification when doing chunked push operations");
+                    warn!("Attempting monolithic push");
+                    self.push_blob_monolithically(image_ref, data, digest).await
+                }
+                Err(e) => Err(e),
             }
-            Err(e) => Err(e),
+        } else {
+            self.push_blob_monolithically(image_ref, data, digest).await
         }
     }
 
@@ -1612,7 +1616,7 @@ impl<'a> RequestBuilderWrapper<'a> {
     fn from_client(
         client: &'a Client,
         f: impl Fn(&reqwest::Client) -> RequestBuilder,
-    ) -> RequestBuilderWrapper {
+    ) -> RequestBuilderWrapper<'a> {
         let request_builder = f(&client.client);
         RequestBuilderWrapper {
             client,
@@ -1752,6 +1756,17 @@ pub struct ClientConfig {
     ///
     /// This defaults to [`DEFAULT_MAX_CONCURRENT_DOWNLOAD`].
     pub max_concurrent_download: usize,
+
+    /// Whether to use chunked uploads when pushing blobs.
+    ///
+    /// When enabled (default), the client will attempt to use chunked uploads
+    /// and fall back to monolithic uploads if the registry doesn't support
+    /// chunked uploads properly.
+    ///
+    /// When disabled, the client will always use monolithic uploads.
+    ///
+    /// This defaults to `true`.
+    pub use_chunked_uploads: bool,
 }
 
 impl Default for ClientConfig {
@@ -1765,6 +1780,7 @@ impl Default for ClientConfig {
             platform_resolver: Some(Box::new(current_platform_resolver)),
             max_concurrent_upload: DEFAULT_MAX_CONCURRENT_UPLOAD,
             max_concurrent_download: DEFAULT_MAX_CONCURRENT_DOWNLOAD,
+            use_chunked_uploads: true,
         }
     }
 }
@@ -3062,5 +3078,125 @@ mod test {
         c.pull_image_manifest(&dest_image, &RegistryAuth::Anonymous)
             .await
             .expect("Failed to pull manifest");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "test-registry")]
+    async fn test_push_blob_with_chunked_disabled() {
+        let docker = clients::Cli::default();
+        let test_container = docker.run(registry_image());
+        let port = test_container.get_host_port_ipv4(5000);
+
+        // Create a client with chunked uploads disabled
+        let c = Client::new(ClientConfig {
+            protocol: ClientProtocol::Http,
+            use_chunked_uploads: false,
+            ..Default::default()
+        });
+
+        let url = format!("localhost:{}/hello-wasm:v1", port);
+        let image: Reference = url.parse().unwrap();
+
+        c.auth(&image, &RegistryAuth::Anonymous, RegistryOperation::Push)
+            .await
+            .expect("result from auth request");
+
+        let image_data = b"test blob data for monolithic upload";
+        let image_digest = format!("sha256:{}", sha256::digest(image_data));
+
+        // This should use monolithic upload since chunked is disabled
+        let location = c
+            .push_blob(&image, image_data, &image_digest)
+            .await
+            .expect("failed to push blob");
+
+        // Verify the blob was uploaded
+        assert_eq!(
+            location,
+            format!(
+                "http://localhost:{}/v2/hello-wasm/blobs/{}",
+                port, image_digest
+            )
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "test-registry")]
+    async fn test_push_blob_with_chunked_enabled() {
+        let docker = clients::Cli::default();
+        let test_container = docker.run(registry_image());
+        let port = test_container.get_host_port_ipv4(5000);
+
+        // Create a client with chunked uploads explicitly enabled (default)
+        let c = Client::new(ClientConfig {
+            protocol: ClientProtocol::Http,
+            use_chunked_uploads: true,
+            ..Default::default()
+        });
+
+        let url = format!("localhost:{}/hello-wasm:v1", port);
+        let image: Reference = url.parse().unwrap();
+
+        c.auth(&image, &RegistryAuth::Anonymous, RegistryOperation::Push)
+            .await
+            .expect("result from auth request");
+
+        let image_data = b"test blob data for chunked upload";
+        let image_digest = format!("sha256:{}", sha256::digest(image_data));
+
+        // This should attempt chunked upload first
+        let location = c
+            .push_blob(&image, image_data, &image_digest)
+            .await
+            .expect("failed to push blob");
+
+        // Verify the blob was uploaded
+        assert_eq!(
+            location,
+            format!(
+                "http://localhost:{}/v2/hello-wasm/blobs/{}",
+                port, image_digest
+            )
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "test-registry")]
+    async fn test_push_blob_fallback_behavior() {
+        let docker = clients::Cli::default();
+        let test_container = docker.run(registry_image());
+        let port = test_container.get_host_port_ipv4(5000);
+
+        // Create a client with default config (chunked enabled)
+        let c = Client::new(ClientConfig {
+            protocol: ClientProtocol::Http,
+            ..Default::default()
+        });
+
+        let url = format!("localhost:{}/hello-wasm:v1", port);
+        let image: Reference = url.parse().unwrap();
+
+        c.auth(&image, &RegistryAuth::Anonymous, RegistryOperation::Push)
+            .await
+            .expect("result from auth request");
+
+        // Use a larger blob to ensure chunked upload is attempted
+        let image_data: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
+        let image_digest = format!("sha256:{}", sha256::digest(&image_data));
+
+        // This should attempt chunked upload and potentially fall back to monolithic
+        let location = c
+            .push_blob(&image, &image_data, &image_digest)
+            .await
+            .expect("failed to push blob");
+
+        // Verify the blob was uploaded
+        assert_eq!(
+            location,
+            format!(
+                "http://localhost:{}/v2/hello-wasm/blobs/{}",
+                port, image_digest
+            )
+        );
     }
 }
