@@ -109,7 +109,8 @@ krust build --platform linux/amd64,linux/arm64
 # Or specify platforms separately
 krust build --platform linux/amd64 --platform linux/arm64
 
-# Default behavior builds for both amd64 and arm64
+# Default behavior detects platforms from base image
+# If the base image supports multiple platforms, krust will build for all of them
 krust build
 ```
 
@@ -134,6 +135,23 @@ krust always pushes OCI image indexes (manifest lists) for consistency:
 4. Returns the manifest list digest for use with Docker/Kubernetes
 
 This means even single-platform builds result in a manifest list, ensuring a uniform interface regardless of the number of platforms built.
+
+#### Automatic Platform Detection
+
+When you don't specify `--platform`, krust automatically detects which platforms to build for by inspecting the base image:
+
+```bash
+# If using cgr.dev/chainguard/static:latest (supports linux/amd64 and linux/arm64)
+krust build  # Automatically builds for both amd64 and arm64
+
+# If using a single-platform base image
+krust build  # Builds only for the supported platform
+
+# You can always override with explicit platforms
+krust build --platform linux/amd64  # Build only for amd64 regardless of base image
+```
+
+This intelligent platform detection ensures your images support the same platforms as your base image, maintaining consistency throughout your image stack.
 
 ## Build Process
 

@@ -339,3 +339,114 @@ fn test_multi_arch_build_and_run() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_platform_detection_from_base_image() -> Result<()> {
+    let example_dir = env::current_dir()?.join("example").join("hello-krust");
+
+    let mut cmd = Command::cargo_bin("krust")?;
+    cmd.arg("build")
+        .arg("--no-push")
+        .arg("--image")
+        .arg("test.local/platform-detection:latest")
+        .arg(".")
+        .current_dir(&example_dir)
+        .env("RUST_LOG", "info");
+
+    // The default base image (cgr.dev/chainguard/static:latest) supports multiple platforms
+    // so we should see platform detection happening
+    cmd.assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "Detecting available platforms from base image",
+        ))
+        .stderr(predicate::str::contains("Detected platforms"));
+    Ok(())
+}
+
+#[test]
+fn test_explicit_platform_overrides_detection() -> Result<()> {
+    let example_dir = env::current_dir()?.join("example").join("hello-krust");
+    let platform = get_test_platform();
+
+    let mut cmd = Command::cargo_bin("krust")?;
+    cmd.arg("build")
+        .arg("--no-push")
+        .arg("--platform")
+        .arg(platform)
+        .arg("--image")
+        .arg("test.local/explicit-platform:latest")
+        .arg(".")
+        .current_dir(&example_dir)
+        .env("RUST_LOG", "info");
+
+    // When platform is explicitly specified, we should NOT see platform detection
+    let output = cmd.output()?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(output.status.success());
+    assert!(!stderr.contains("Detecting available platforms from base image"));
+    assert!(stderr.contains(&format!("Building for platform: {}", platform)));
+    Ok(())
+}
+
+#[test]
+fn test_alpine_base_image_many_platforms() -> Result<()> {
+    // Create a temporary directory for this test
+    let temp_dir = tempfile::tempdir()?;
+    let test_project_dir = temp_dir.path().join("test-alpine");
+    std::fs::create_dir_all(&test_project_dir)?;
+
+    // Create a simple Cargo.toml with Alpine as base image
+    let cargo_toml = r#"[package]
+name = "test-alpine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[package.metadata.krust]
+base-image = "alpine:latest"
+"#;
+    std::fs::write(test_project_dir.join("Cargo.toml"), cargo_toml)?;
+
+    // Create src directory and main.rs
+    std::fs::create_dir_all(test_project_dir.join("src"))?;
+    std::fs::write(
+        test_project_dir.join("src/main.rs"),
+        r#"fn main() { println!("Hello from Alpine test!"); }"#,
+    )?;
+
+    let mut cmd = Command::cargo_bin("krust")?;
+    let output = cmd
+        .arg("build")
+        .arg("--no-push")
+        .arg("--image")
+        .arg("test.local/alpine-platforms:latest")
+        .arg(".")
+        .current_dir(&test_project_dir)
+        .env("RUST_LOG", "info")
+        .output()?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Alpine typically supports many platforms, but we might not have all the toolchains
+    // So we check that platform detection happened
+    assert!(stderr.contains("Detecting available platforms from base image: alpine:latest"));
+    assert!(stderr.contains("Found platforms:") || stderr.contains("Detected platforms:"));
+
+    // The build might fail due to missing toolchains for some platforms, which is OK
+    // We're mainly testing that platform detection works
+    if !output.status.success() {
+        // Check if it failed due to missing toolchains (expected)
+        assert!(
+            stderr.contains("target may not be installed")
+                || stderr.contains("linker")
+                || stderr.contains("cross-compilation"),
+            "Build failed for unexpected reason: {}",
+            stderr
+        );
+    }
+
+    Ok(())
+}
