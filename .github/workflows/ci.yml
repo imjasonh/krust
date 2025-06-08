@@ -162,10 +162,15 @@ jobs:
       run: |
         cd example/hello-krust
         krust build --no-push --image local.test/hello:latest ./
-    - name: Test multi-arch build
+    - name: Test multi-arch build and run
       run: |
         cd example/hello-krust
-        krust build --no-push --platform linux/amd64,linux/arm64 --image local.test/multiarch:latest ./
+        # Build for both platforms and push
+        export KRUST_REPO=ttl.sh/${{ github.run_id }}-multiarch
+        IMAGE_REF=$(krust build --platform linux/amd64,linux/arm64 ./)
+        echo "Built multi-arch image: $IMAGE_REF"
+        # Run the image - should automatically select the right architecture
+        docker run --rm $IMAGE_REF
 
   # Takes too long to run on CI, so it's commented out for now.
   # coverage:
