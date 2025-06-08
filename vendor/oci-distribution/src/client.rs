@@ -918,6 +918,45 @@ impl Client {
             })
     }
 
+    /// Pull a manifest with automatic auth resolution using Docker config and credential helpers
+    pub async fn pull_manifest_auto(
+        &self,
+        image: &Reference,
+    ) -> Result<(OciManifest, String)> {
+        let auth = crate::credential_helper::resolve_docker_auth(&image.to_string())?;
+        self.pull_manifest(image, &auth).await
+    }
+
+    /// Pull an image with automatic auth resolution using Docker config and credential helpers
+    pub async fn pull_auto(
+        &self,
+        image: &Reference,
+    ) -> Result<ImageData> {
+        let auth = crate::credential_helper::resolve_docker_auth(&image.to_string())?;
+        self.pull(image, &auth, vec![]).await
+    }
+
+    /// Push an image with automatic auth resolution using Docker config and credential helpers
+    pub async fn push_auto(
+        &self,
+        image_ref: &Reference,
+        layers: &[ImageLayer],
+        config: Config,
+        manifest: Option<OciImageManifest>,
+    ) -> Result<PushResponse> {
+        let auth = crate::credential_helper::resolve_docker_auth(&image_ref.to_string())?;
+        self.push(image_ref, layers, config, &auth, manifest).await
+    }
+
+    /// Get image platforms with automatic auth resolution
+    pub async fn get_image_platforms_auto(
+        &self,
+        image: &Reference,
+    ) -> Result<Vec<(String, String)>> {
+        let auth = crate::credential_helper::resolve_docker_auth(&image.to_string())?;
+        self.get_image_platforms(image, &auth).await
+    }
+
     async fn _pull_manifest_and_config(
         &self,
         image: &Reference,

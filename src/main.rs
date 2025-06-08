@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use krust::{
-    auth::{DefaultKeychain, Keychain},
+    auth::resolve_auth,
     builder::{get_rust_target_triple, RustBuilder},
     cli::{Cli, Commands},
     config::Config,
@@ -59,8 +59,7 @@ async fn main() -> Result<()> {
                 format!("{}/{}:latest", repo, project_name)
             };
 
-            // Initialize registry client and keychain
-            let keychain = DefaultKeychain::new();
+            // Initialize registry client
             let mut registry_client = RegistryClient::new()?;
 
             // Determine platforms to build for
@@ -74,10 +73,7 @@ async fn main() -> Result<()> {
                     base_image
                 );
                 // Get auth for the base image registry
-                let base_auth = keychain
-                    .resolve(&base_image)?
-                    .authorization()?
-                    .to_registry_auth();
+                let base_auth = resolve_auth(&base_image)?;
 
                 match registry_client
                     .get_image_platforms(&base_image, &base_auth)
@@ -143,10 +139,7 @@ async fn main() -> Result<()> {
                     let platform_ref = format!("{}:{}", base_ref, platform_tag);
 
                     // Get auth for the target registry
-                    let push_auth = keychain
-                        .resolve(&platform_ref)?
-                        .authorization()?
-                        .to_registry_auth();
+                    let push_auth = resolve_auth(&platform_ref)?;
 
                     let (digest_ref, manifest_size) = registry_client
                         .push_image(&platform_ref, config_data, layers, &push_auth)
@@ -188,10 +181,7 @@ async fn main() -> Result<()> {
                 info!("Creating and pushing manifest list...");
 
                 // Get auth for the final image push
-                let final_auth = keychain
-                    .resolve(&image_ref)?
-                    .authorization()?
-                    .to_registry_auth();
+                let final_auth = resolve_auth(&image_ref)?;
 
                 let manifest_list_ref = registry_client
                     .push_manifest_list(&image_ref, manifest_descriptors, &final_auth)

@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 mod keychain;
+mod simple;
 
 pub use keychain::{DefaultKeychain, Keychain};
+pub use simple::resolve_auth;
 
 /// Authentication configuration containing credentials
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

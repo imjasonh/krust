@@ -32,3 +32,7 @@ base64 = "0.22"
 tempfile = "3.9"
 assert_cmd = "2.0"
 predicates = "3.0"
+
+[[example]]
+name = "auto_auth_demo"
+path = "examples/auto_auth_demo.rs"
