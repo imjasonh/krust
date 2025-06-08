@@ -4,6 +4,7 @@ use predicates::prelude::*;
 use std::env;
 use std::process::Command as StdCommand;
 
+
 #[test]
 fn test_version_command() -> Result<()> {
     let mut cmd = Command::cargo_bin("krust")?;
@@ -56,11 +57,9 @@ fn test_build_requires_repo_or_image() -> Result<()> {
         .current_dir(&example_dir)
         .env_remove("KRUST_REPO");
 
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "Either --image or KRUST_REPO must be set",
-        ));
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Either --image or KRUST_REPO must be set",
+    ));
     Ok(())
 }
 
@@ -76,11 +75,12 @@ fn test_build_with_krust_repo_env() -> Result<()> {
         .env("KRUST_REPO", "test.local")
         .current_dir(&example_dir);
 
-    cmd.assert().success().stderr(predicate::str::contains(
-        "Building Rust project",
-    )).stderr(predicate::str::contains(
-        "Successfully built image: test.local/hello-krust:latest",
-    ));
+    cmd.assert()
+        .success()
+        .stderr(predicate::str::contains("Building Rust project"))
+        .stderr(predicate::str::contains(
+            "Successfully built image: test.local/hello-krust:latest",
+        ));
     Ok(())
 }
 
@@ -101,7 +101,10 @@ fn test_command_substitution_syntax() -> Result<()> {
 
     // Stdout should be empty when --no-push is used
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.trim().is_empty(), "Stdout should be empty with --no-push");
+    assert!(
+        stdout.trim().is_empty(),
+        "Stdout should be empty with --no-push"
+    );
 
     // Stderr should contain log messages
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -129,12 +132,11 @@ fn test_verbose_logging() -> Result<()> {
 }
 
 #[test]
-#[ignore] // This test requires Docker and a registry
+#[cfg_attr(not(ci), ignore)] // Run in CI, but allow skipping locally
 fn test_full_build_and_run_workflow() -> Result<()> {
-    // Skip if Docker is not available
+    // This test requires Docker
     if StdCommand::new("docker").arg("version").output().is_err() {
-        eprintln!("Skipping test: Docker not available");
-        return Ok(());
+        panic!("Docker is required for this test but is not available");
     }
 
     // Get the example project directory

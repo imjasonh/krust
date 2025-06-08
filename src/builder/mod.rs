@@ -46,6 +46,27 @@ impl RustBuilder {
         };
         cmd.env("RUSTFLAGS", rustflags);
 
+        // For cross-compilation on non-Linux platforms, set linker if available
+        if cfg!(not(target_os = "linux")) && self.target.contains("linux") {
+            // Check if we have a musl cross-compiler available
+            if self.target.contains("x86_64-unknown-linux-musl") {
+                // On Windows, prefer rust-lld
+                if cfg!(target_os = "windows") {
+                    cmd.env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "rust-lld");
+                    debug!("Using linker: rust-lld");
+                } else {
+                    // Try common linker names on other platforms
+                    for linker in &["x86_64-linux-musl-gcc", "musl-gcc", "x86_64-linux-gnu-gcc"] {
+                        if which::which(linker).is_ok() {
+                            cmd.env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", linker);
+                            debug!("Using linker: {}", linker);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         for arg in &self.cargo_args {
             cmd.arg(arg);
         }

@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "--cfg ci"
 
 jobs:
   test:
@@ -23,6 +24,29 @@ jobs:
       uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.rust }}
+        targets: x86_64-unknown-linux-musl
+    - name: Install cross-compilation tools (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools
+    - name: Install cross-compilation tools (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install musl-cross
+        # Set up cargo config for cross-compilation
+        mkdir -p ~/.cargo
+        echo '[target.x86_64-unknown-linux-musl]' >> ~/.cargo/config.toml
+        echo 'linker = "x86_64-linux-musl-gcc"' >> ~/.cargo/config.toml
+    - name: Install cross-compilation tools (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # On Windows, we'll use rust-lld as the linker for musl targets
+        rustup component add llvm-tools-preview
+        # Create cargo config
+        mkdir -p ~/.cargo
+        echo '[target.x86_64-unknown-linux-musl]' >> ~/.cargo/config.toml
+        echo 'linker = "rust-lld"' >> ~/.cargo/config.toml
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -72,6 +96,12 @@ jobs:
   integration:
     name: Integration Test
     runs-on: ubuntu-latest
+    needs: [test, fmt, clippy]  # Only run after other tests pass
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust
@@ -82,6 +112,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y musl-tools
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
     - name: Build krust
       run: cargo build --release
     - name: Add krust to PATH
