@@ -44,17 +44,7 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-    - name: Setup cargo config for cross-compilation
-      run: |
-        mkdir -p .cargo
-        cat > .cargo/config.toml << 'EOF'
-        [target.x86_64-unknown-linux-musl]
-        linker = "x86_64-linux-musl-gcc"
-
-        [target.aarch64-unknown-linux-musl]
-        linker = "aarch64-linux-gnu-gcc"
-        EOF
-    - name: Verify cross-compilation setup (Unix)
+    - name: Verify cross-compilation setup
       run: |
         echo "Installed targets:"
         rustup target list --installed
@@ -71,11 +61,11 @@ jobs:
         echo "Cargo config:"
         cat .cargo/config.toml || echo "No cargo config found"
     - name: Build
-      run: cargo build --verbose
+      run: make build-verbose
     - name: Run unit tests
-      run: cargo test --verbose -- --test-threads=1
+      run: make test-verbose
     - name: Run e2e tests
-      run: cargo test --test '*' --verbose -- --test-threads=1
+      run: make test-e2e-verbose
 
   fmt:
     name: Rustfmt
@@ -88,7 +78,7 @@ jobs:
         toolchain: stable
         components: rustfmt
     - name: Check formatting
-      run: cargo fmt -- --check
+      run: make check-fmt
 
   clippy:
     name: Clippy
@@ -101,7 +91,7 @@ jobs:
         toolchain: stable
         components: clippy
     - name: Run clippy
-      run: cargo clippy -- -D warnings
+      run: make lint
 
   security-audit:
     name: Security Audit
