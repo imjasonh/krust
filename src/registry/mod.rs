@@ -234,7 +234,12 @@ impl RegistryClient {
                             let normalized = match platform.as_str() {
                                 "linux/amd64" => Some("linux/amd64".to_string()),
                                 "linux/arm64" | "linux/arm64/v8" => Some("linux/arm64".to_string()),
-                                "linux/arm/v6" | "linux/arm/v7" => Some("linux/arm/v7".to_string()),
+                                "linux/arm/v7" => Some("linux/arm/v7".to_string()),
+                                "linux/arm/v6" => Some("linux/arm/v6".to_string()),
+                                "linux/386" => Some("linux/386".to_string()),
+                                "linux/ppc64le" => Some("linux/ppc64le".to_string()),
+                                "linux/s390x" => Some("linux/s390x".to_string()),
+                                "linux/riscv64" => Some("linux/riscv64".to_string()),
                                 _ => {
                                     debug!("Skipping unsupported platform: {}", platform);
                                     None
