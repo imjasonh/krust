@@ -191,9 +191,11 @@ mod tests {
         // Save current env vars
         let old_config = env::var("DOCKER_CONFIG").ok();
         let old_path = env::var("PATH").ok();
+        let old_registry_auth = env::var("REGISTRY_AUTH_FILE").ok();
 
-        // Set our temp dir in PATH and DOCKER_CONFIG
+        // Set our temp dir in PATH and DOCKER_CONFIG, clear REGISTRY_AUTH_FILE
         env::set_var("DOCKER_CONFIG", tmp_dir.path());
+        env::remove_var("REGISTRY_AUTH_FILE");
         let new_path = format!("{}:{}", tmp_dir.path().display(), env::var("PATH").unwrap_or_default());
         env::set_var("PATH", new_path);
 
@@ -211,6 +213,11 @@ mod tests {
             env::set_var("PATH", val);
         } else {
             env::remove_var("PATH");
+        }
+        if let Some(val) = old_registry_auth {
+            env::set_var("REGISTRY_AUTH_FILE", val);
+        } else {
+            env::remove_var("REGISTRY_AUTH_FILE");
         }
     }
 
@@ -278,18 +285,27 @@ mod tests {
 
         fs::write(&auth_file, config).unwrap();
 
-        // Save current env var
-        let old_val = env::var("REGISTRY_AUTH_FILE").ok();
+        // Save current env vars
+        let old_registry_auth = env::var("REGISTRY_AUTH_FILE").ok();
+        let old_docker_config = env::var("DOCKER_CONFIG").ok();
+
+        // Set REGISTRY_AUTH_FILE and clear DOCKER_CONFIG to avoid conflicts
         env::set_var("REGISTRY_AUTH_FILE", auth_file.to_str().unwrap());
+        env::remove_var("DOCKER_CONFIG");
 
         let auth = resolve_docker_auth("special.registry.io/image").unwrap();
         assert_eq!(auth, RegistryAuth::Basic("authfile-user".to_string(), "authfile-pass".to_string()));
 
-        // Restore env var
-        if let Some(val) = old_val {
+        // Restore env vars
+        if let Some(val) = old_registry_auth {
             env::set_var("REGISTRY_AUTH_FILE", val);
         } else {
             env::remove_var("REGISTRY_AUTH_FILE");
+        }
+        if let Some(val) = old_docker_config {
+            env::set_var("DOCKER_CONFIG", val);
+        } else {
+            env::remove_var("DOCKER_CONFIG");
         }
     }
 }

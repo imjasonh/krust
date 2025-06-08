@@ -91,20 +91,29 @@ fn test_resolve_auth_bearer_token() -> Result<()> {
 
     fs::write(&config_path, config)?;
 
-    // Save current env var
-    let old_val = env::var("DOCKER_CONFIG").ok();
+    // Save current env vars
+    let old_docker_config = env::var("DOCKER_CONFIG").ok();
+    let old_registry_auth = env::var("REGISTRY_AUTH_FILE").ok();
+    
+    // Set our test config and clear other env vars
     env::set_var("DOCKER_CONFIG", tmp_dir.path());
+    env::remove_var("REGISTRY_AUTH_FILE");
 
     // Should resolve to bearer auth
     let auth = resolve_auth("ghcr.io/user/image")?;
     assert!(matches!(auth, RegistryAuth::Bearer(token)
         if token == "test-bearer-token"));
 
-    // Restore env var
-    if let Some(val) = old_val {
+    // Restore env vars
+    if let Some(val) = old_docker_config {
         env::set_var("DOCKER_CONFIG", val);
     } else {
         env::remove_var("DOCKER_CONFIG");
+    }
+    if let Some(val) = old_registry_auth {
+        env::set_var("REGISTRY_AUTH_FILE", val);
+    } else {
+        env::remove_var("REGISTRY_AUTH_FILE");
     }
 
     Ok(())
