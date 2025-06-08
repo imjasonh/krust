@@ -50,6 +50,16 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    - name: Setup cargo config for cross-compilation
+      run: |
+        mkdir -p .cargo
+        cat > .cargo/config.toml << 'EOF'
+        [target.x86_64-unknown-linux-musl]
+        linker = "x86_64-linux-musl-gcc"
+
+        [target.aarch64-unknown-linux-musl]
+        linker = "aarch64-linux-gnu-gcc"
+        EOF
     - name: Verify cross-compilation setup (Unix)
       run: |
         echo "Installed targets:"
@@ -62,9 +72,10 @@ jobs:
         which x86_64-unknown-linux-musl-gcc || echo "x86_64-unknown-linux-musl-gcc not found"
         which x86_64-linux-musl-gcc || echo "x86_64-linux-musl-gcc not found"
         which musl-gcc || echo "musl-gcc not found"
+        which aarch64-linux-gnu-gcc || echo "aarch64-linux-gnu-gcc not found"
         which rust-lld || echo "rust-lld not found"
         echo "Cargo config:"
-        cat ~/.cargo/config.toml || echo "No cargo config found"
+        cat .cargo/config.toml || echo "No cargo config found"
     - name: Build
       run: cargo build --verbose
     - name: Run unit tests
@@ -115,6 +126,16 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
+    - name: Setup cargo config for cross-compilation
+      run: |
+        mkdir -p .cargo
+        cat > .cargo/config.toml << 'EOF'
+        [target.x86_64-unknown-linux-musl]
+        linker = "x86_64-linux-musl-gcc"
+
+        [target.aarch64-unknown-linux-musl]
+        linker = "aarch64-linux-gnu-gcc"
+        EOF
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     - name: Build krust
