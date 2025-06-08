@@ -7,7 +7,7 @@ use krust::{
     image::ImageBuilder,
     registry::RegistryClient,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
         } => {
             let config = Config::load()?;
             let project_path = path.unwrap_or_else(|| PathBuf::from("."));
-            
+
             // Determine the image name
             let image_ref = if let Some(image) = image {
                 // Use explicit image if provided
@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
                 let digest_ref = registry_client
                     .push_image(&image_ref, config_data, layers)
                     .await?;
-                
+
                 // Print only the digest reference to stdout
                 println!("{}", digest_ref);
             } else {
@@ -93,19 +93,17 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn get_project_name(project_path: &PathBuf) -> Result<String> {
+fn get_project_name(project_path: &Path) -> Result<String> {
     let cargo_toml_path = project_path.join("Cargo.toml");
-    let content = std::fs::read_to_string(&cargo_toml_path)
-        .context("Failed to read Cargo.toml")?;
-    
-    let manifest: toml::Value = toml::from_str(&content)
-        .context("Failed to parse Cargo.toml")?;
-    
+    let content = std::fs::read_to_string(&cargo_toml_path).context("Failed to read Cargo.toml")?;
+
+    let manifest: toml::Value = toml::from_str(&content).context("Failed to parse Cargo.toml")?;
+
     let name = manifest
         .get("package")
         .and_then(|p| p.get("name"))
         .and_then(|n| n.as_str())
         .context("Failed to get package name from Cargo.toml")?;
-    
+
     Ok(name.to_string())
 }

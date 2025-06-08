@@ -87,19 +87,19 @@ impl RegistryClient {
             .context("Failed to push manifest")?;
 
         info!("Successfully pushed image to {}", manifest_url);
-        
+
         // Extract digest from the manifest URL
         // URL format: https://registry/v2/repo/manifests/sha256:digest
         let digest = manifest_url
             .split('/')
-            .last()
+            .next_back()
             .context("Failed to extract digest from manifest URL")?;
-        
+
         // Build the full image reference with digest
         let registry = reference.registry();
         let repository = reference.repository();
         let digest_ref = format!("{}/{}@{}", registry, repository, digest);
-        
+
         Ok(digest_ref)
     }
 }
