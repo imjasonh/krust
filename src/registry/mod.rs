@@ -18,6 +18,97 @@ impl RegistryClient {
         Ok(Self { client })
     }
 
+    pub async fn push_image_by_digest(
+        &mut self,
+        repository: &str,
+        config_data: Vec<u8>,
+        layers: Vec<(Vec<u8>, String)>,
+        auth: &RegistryAuth,
+    ) -> Result<(String, usize)> {
+        // Create a temporary reference for authentication - we'll only use the digest result
+        let temp_ref = format!("{}:temp", repository);
+        let reference: Reference = temp_ref
+            .parse()
+            .context("Failed to parse repository reference")?;
+
+        info!("Pushing image to {} (digest only)", repository);
+
+        // Authenticate with the registry
+        self.client
+            .auth(&reference, auth, oci_distribution::RegistryOperation::Push)
+            .await
+            .context("Failed to authenticate with registry")?;
+
+        // Push config blob
+        let config_digest = format!("sha256:{}", sha256::digest(&config_data));
+        debug!("Pushing config blob: {}", config_digest);
+
+        self.client
+            .push_blob(&reference, &config_data, &config_digest)
+            .await
+            .context("Failed to push config blob")?;
+
+        // Push layers
+        let mut manifest_layers = Vec::new();
+        for (layer_data, media_type) in layers {
+            let digest = format!("sha256:{}", sha256::digest(&layer_data));
+            debug!("Pushing layer: {}", digest);
+
+            self.client
+                .push_blob(&reference, &layer_data, &digest)
+                .await
+                .context("Failed to push layer")?;
+
+            manifest_layers.push(OciDescriptor {
+                media_type: media_type.clone(),
+                digest: digest.clone(),
+                size: layer_data.len() as i64,
+                urls: None,
+                annotations: None,
+            });
+        }
+
+        // Create and push manifest (this will generate a digest)
+        let image_manifest = OciImageManifest {
+            schema_version: 2,
+            media_type: Some("application/vnd.oci.image.manifest.v1+json".to_string()),
+            artifact_type: None,
+            config: OciDescriptor {
+                media_type: "application/vnd.oci.image.config.v1+json".to_string(),
+                digest: config_digest,
+                size: config_data.len() as i64,
+                urls: None,
+                annotations: None,
+            },
+            layers: manifest_layers,
+            annotations: None,
+        };
+
+        // Wrap the image manifest in the OciManifest enum
+        let manifest = OciManifest::Image(image_manifest);
+
+        debug!("Pushing manifest for digest-only image");
+        let (manifest_url, digest) = self
+            .client
+            .push_manifest_and_get_digest(&reference, &manifest)
+            .await
+            .context("Failed to push manifest")?;
+
+        info!(
+            "Successfully pushed image to {} (digest: {})",
+            manifest_url, digest
+        );
+
+        // Build the full image reference with digest only
+        let registry = reference.registry();
+        let repository = reference.repository();
+        let digest_ref = format!("{}/{}@{}", registry, repository, digest);
+
+        // Return both the digest ref and the actual manifest size
+        let manifest_size = serde_json::to_vec(&manifest)?.len();
+        Ok((digest_ref, manifest_size))
+    }
+
     pub async fn push_image(
         &mut self,
         image_ref: &str,

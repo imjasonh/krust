@@ -128,16 +128,12 @@ async fn main() -> Result<()> {
 
                     let layers = vec![(layer_data, manifest.layers[0].media_type.clone())];
 
-                    // Create a unique tag for this platform to avoid conflicts
-                    // Platform-specific images should not be tagged for external use
-                    let platform_tag = format!("platform-{}", platform_str.replace('/', "-"));
-                    let platform_ref = format!("{}:{}", base_repo, platform_tag);
-
                     // Get auth for the target registry
-                    let push_auth = resolve_auth(&platform_ref)?;
+                    let push_auth = resolve_auth(&base_repo)?;
 
+                    // Push platform image by digest only (no tags)
                     let (digest_ref, manifest_size) = registry_client
-                        .push_image(&platform_ref, config_data, layers, &push_auth)
+                        .push_image_by_digest(&base_repo, config_data, layers, &push_auth)
                         .await?;
 
                     // Parse platform string
