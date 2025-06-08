@@ -200,25 +200,8 @@ jobs:
       run: cargo build --release
     - name: Test multi-platform build with Alpine base
       run: |
-        # Create a test project that uses Alpine (which supports many platforms)
-        mkdir -p test-alpine-platforms/src
-        cat > test-alpine-platforms/Cargo.toml << 'EOF'
-        [package]
-        name = "test-alpine"
-        version = "0.1.0"
-        edition = "2021"
-
-        [package.metadata.krust]
-        base-image = "alpine:latest"
-        EOF
-        cat > test-alpine-platforms/src/main.rs << 'EOF'
-        fn main() {
-            println!("Hello from Alpine multi-platform test!");
-        }
-        EOF
-
         # Test that platform detection works (even if we can't build all platforms)
-        cd test-alpine-platforms
+        cd example/alpine-base
         ../target/release/krust build --no-push --image test.local/alpine-test:latest . 2>&1 | tee build.log
 
         # Verify platform detection happened
