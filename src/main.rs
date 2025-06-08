@@ -34,6 +34,7 @@ async fn main() -> Result<()> {
             image,
             platform,
             no_push,
+            tag,
             repo,
             cargo_args,
         } => {
@@ -48,15 +49,19 @@ async fn main() -> Result<()> {
                 .base_image
                 .unwrap_or(config.base_image.clone());
 
-            // Determine the image name
-            let image_ref = if let Some(image) = image {
-                // Use explicit image if provided
-                image
+            // Determine the base repository name (without any tag)
+            let base_repo = if let Some(image) = image {
+                // Use explicit image if provided, strip any tag/digest
+                if let Some(pos) = image.rfind([':', '@']) {
+                    image[..pos].to_string()
+                } else {
+                    image
+                }
             } else {
-                // Build image name from repo and project name
+                // Build repository name from repo and project name
                 let repo = repo.context("Either --image or KRUST_REPO must be set")?;
                 let project_name = get_project_name(&project_path)?;
-                format!("{}/{}:latest", repo, project_name)
+                format!("{}/{}", repo, project_name)
             };
 
             // Initialize registry client
@@ -123,20 +128,10 @@ async fn main() -> Result<()> {
 
                     let layers = vec![(layer_data, manifest.layers[0].media_type.clone())];
 
-                    // For manifest lists to work properly, we need to push to a consistent location
-                    // We'll use the base image ref with a unique tag for each platform
-                    let (base_ref, _) = if let Some(pos) = image_ref.rfind(':') {
-                        (
-                            image_ref[..pos].to_string(),
-                            image_ref[pos + 1..].to_string(),
-                        )
-                    } else {
-                        (image_ref.to_string(), "latest".to_string())
-                    };
-
                     // Create a unique tag for this platform to avoid conflicts
+                    // Platform-specific images should not be tagged for external use
                     let platform_tag = format!("platform-{}", platform_str.replace('/', "-"));
-                    let platform_ref = format!("{}:{}", base_ref, platform_tag);
+                    let platform_ref = format!("{}:{}", base_repo, platform_tag);
 
                     // Get auth for the target registry
                     let push_auth = resolve_auth(&platform_ref)?;
@@ -180,14 +175,24 @@ async fn main() -> Result<()> {
             if !no_push {
                 info!("Creating and pushing manifest list...");
 
+                // Determine the target for the manifest list
+                let manifest_target = if let Some(tag_name) = tag {
+                    // If --tag is specified, push to that tag
+                    format!("{}:{}", base_repo, tag_name)
+                } else {
+                    // If no tag specified, push digest-only by using a temporary tag
+                    // We'll use a temporary tag and return the digest reference
+                    format!("{}:temp-{}", base_repo, std::process::id())
+                };
+
                 // Get auth for the final image push
-                let final_auth = resolve_auth(&image_ref)?;
+                let final_auth = resolve_auth(&manifest_target)?;
 
                 let manifest_list_ref = registry_client
-                    .push_manifest_list(&image_ref, manifest_descriptors, &final_auth)
+                    .push_manifest_list(&manifest_target, manifest_descriptors, &final_auth)
                     .await?;
 
-                // Output the manifest list reference
+                // Output the manifest list reference (always by digest)
                 println!("{}", manifest_list_ref);
             } else {
                 info!(

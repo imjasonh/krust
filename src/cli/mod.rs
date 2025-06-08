@@ -34,6 +34,10 @@ pub enum Commands {
         #[arg(long)]
         no_push: bool,
 
+        /// Tag to apply to the manifest list (e.g., latest, v1.0.0)
+        #[arg(long)]
+        tag: Option<String>,
+
         /// Repository prefix (e.g., ghcr.io/username)
         #[arg(long, env = "KRUST_REPO")]
         repo: Option<String>,
