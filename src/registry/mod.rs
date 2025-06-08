@@ -14,11 +14,7 @@ pub struct RegistryClient {
 
 impl RegistryClient {
     pub fn new() -> Result<Self> {
-        let config = oci_distribution::client::ClientConfig {
-            use_chunked_uploads: false, // Disable chunked uploads for better compatibility with various registries
-            ..Default::default()
-        };
-        let client = Client::new(config);
+        let client = Client::new(oci_distribution::client::ClientConfig::default());
         Ok(Self { client })
     }
 
