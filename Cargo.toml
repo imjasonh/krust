@@ -24,7 +24,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dirs = "5.0"
 toml = "0.8"
-which = "6.0"
+which = "8.0"
 tempfile = "3.9"
 
 [dev-dependencies]
