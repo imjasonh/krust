@@ -4,7 +4,6 @@ use predicates::prelude::*;
 use std::env;
 use std::process::Command as StdCommand;
 
-
 #[test]
 fn test_version_command() -> Result<()> {
     let mut cmd = Command::cargo_bin("krust")?;

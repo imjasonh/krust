@@ -231,6 +231,57 @@ rustup target add x86_64-unknown-linux-musl
 
 This is normal when building linux/amd64 images on Apple Silicon. The images will still run correctly under emulation.
 
+## Development
+
+### Setting up development environment
+
+```bash
+# Clone the repository
+git clone https://github.com/imjasonh/krust.git
+cd krust
+
+# Install pre-commit hooks
+pip install pre-commit
+  or
+brew install pre-commit
+
+pre-commit install
+
+# Build and test
+cargo build
+cargo test
+```
+
+### Pre-commit hooks
+
+This project uses pre-commit hooks to ensure code quality. The hooks will automatically:
+- Run `cargo fmt` to format code
+- Run `cargo clippy` to check for common mistakes
+- Run `cargo check` to ensure the project compiles
+- Fix trailing whitespace and ensure files end with newline
+- Validate YAML files
+
+To run the hooks manually:
+```bash
+pre-commit run --all-files
+```
+
+### Running tests
+
+```bash
+# Run all tests
+cargo test
+
+# Run only unit tests
+cargo test --lib
+
+# Run integration tests
+cargo test --test integration_test
+
+# Run with verbose output
+cargo test -- --nocapture
+```
+
 ## License
 
 MIT OR Apache-2.0
