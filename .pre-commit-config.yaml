@@ -4,35 +4,35 @@ repos:
     hooks:
       - id: rustfmt
         name: rustfmt
-        entry: cargo fmt -- --check
+        entry: make check-fmt
         language: system
         types: [rust]
         pass_filenames: false
 
       - id: clippy
         name: clippy
-        entry: cargo clippy -- -D warnings
+        entry: make lint
         language: system
         types: [rust]
         pass_filenames: false
 
       - id: cargo-check
         name: cargo check
-        entry: cargo check
+        entry: make check-code
         language: system
         types: [rust]
         pass_filenames: false
 
       - id: cargo-test
         name: cargo test
-        entry: cargo test
+        entry: make test-unit
         language: system
         types: [rust]
         pass_filenames: false
 
       - id: cargo-test-e2e
         name: cargo e2e tests
-        entry: cargo test --test '*'
+        entry: make test-e2e
         language: system
         types: [rust]
         pass_filenames: false

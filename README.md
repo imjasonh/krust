@@ -1,5 +1,7 @@
 # krust
 
+[![CI](https://github.com/imjasonh/krust/actions/workflows/ci.yml/badge.svg)](https://github.com/imjasonh/krust/actions/workflows/ci.yml)
+
 A container image build tool for Rust applications, inspired by [`ko`](https://ko.build) for Go.
 
 ## Overview
@@ -238,13 +240,7 @@ default_registry = "ghcr.io"
 
 [build]
 cargo_args = ["--features", "production"]
-
-[registries."ghcr.io"]
-username = "myuser"
-password = "mytoken"
 ```
-
-Note: Registry authentication is not yet implemented. Currently, krust uses anonymous authentication.
 
 ### Configuration Precedence
 
@@ -252,6 +248,50 @@ When determining the base image, krust uses this precedence order:
 1. Project-specific config in `Cargo.toml` (highest priority)
 2. Global config in `~/.config/krust/config.toml`
 3. Built-in default: `cgr.dev/chainguard/static:latest` (lowest priority)
+
+## Registry Authentication
+
+krust automatically handles registry authentication using Docker's standard credential mechanisms:
+
+### Docker Config Files
+
+krust reads authentication from standard Docker config locations:
+- `$DOCKER_CONFIG/config.json` (if DOCKER_CONFIG is set)
+- `$REGISTRY_AUTH_FILE` (if set, takes precedence)
+- `~/.docker/config.json` (default location)
+
+### Docker Credential Helpers
+
+krust supports Docker credential helpers for secure credential storage:
+- Reads from `credHelpers` configuration for specific registries
+- Falls back to `credsStore` for the default credential store
+- Supports all standard Docker credential helpers (e.g., `docker-credential-desktop`, `docker-credential-pass`)
+
+### Authentication Methods
+
+krust automatically detects and uses the appropriate authentication:
+- **Anonymous** - For public registries and images
+- **Basic Auth** - Username and password authentication
+- **Bearer Token** - OAuth2/JWT token authentication (e.g., for GitHub Container Registry)
+
+Example Docker config with various auth methods:
+```json
+{
+  "auths": {
+    "docker.io": {
+      "auth": "base64(username:password)"
+    },
+    "ghcr.io": {
+      "registrytoken": "ghp_your_github_token"
+    }
+  },
+  "credHelpers": {
+    "gcr.io": "gcloud",
+    "123456789.dkr.ecr.us-east-1.amazonaws.com": "ecr-login"
+  },
+  "credsStore": "desktop"
+}
+```
 
 ## Key Features
 
@@ -264,6 +304,7 @@ When determining the base image, krust uses this precedence order:
 - **OCI compliant** - Works with any OCI-compliant container registry
 - **Isolated builds** - Each build uses a temporary directory to avoid conflicts
 - **Concurrent builds** - Multiple builds can run safely in parallel
+- **Automatic authentication** - Seamlessly integrates with Docker credential helpers and config files
 
 ## Example
 
@@ -365,18 +406,47 @@ brew install pre-commit
 pre-commit install
 
 # Build and test
-cargo build
-cargo test
+make build
+make test
+```
+
+### Makefile Targets
+
+The project includes a comprehensive Makefile for common development tasks:
+
+```bash
+# Building
+make build              # Build the project
+make build-verbose      # Build with verbose output
+
+# Testing (runs single-threaded to avoid env var races)
+make test              # Run all tests
+make test-unit         # Run unit tests only
+make test-e2e          # Run end-to-end tests only
+make test-verbose      # Run all tests with verbose output
+
+# Code quality
+make fmt               # Format code
+make lint              # Run clippy linter
+make check-fmt         # Check formatting without fixing
+make check             # Run all checks (format, lint, test)
+
+# Cross-compilation
+make setup-cross-compile    # Set up cargo config for cross-compilation
+make verify-cross-compile   # Verify cross-compilation setup
 ```
 
 ### Pre-commit hooks
 
 This project uses pre-commit hooks to ensure code quality. The hooks will automatically:
-- Run `cargo fmt` to format code
+- Check code formatting with `cargo fmt`
 - Run `cargo clippy` to check for common mistakes
 - Run `cargo check` to ensure the project compiles
+- Run tests (single-threaded to avoid environment variable conflicts)
 - Fix trailing whitespace and ensure files end with newline
 - Validate YAML files
+
+All hooks use the Makefile targets for consistency with CI.
 
 To run the hooks manually:
 ```bash
@@ -385,18 +455,21 @@ pre-commit run --all-files
 
 ### Running tests
 
+Tests are configured to run single-threaded by default to avoid race conditions with environment variable modifications (the credential helper tests modify DOCKER_CONFIG, HOME, etc.):
+
 ```bash
-# Run all tests
-cargo test
+# Run all tests (using Makefile)
+make test
 
-# Run only unit tests
-cargo test --lib
+# Run specific test suites
+make test-unit         # Unit tests only
+make test-e2e          # End-to-end tests only
 
-# Run integration tests
-cargo test --test integration_test
+# Run with cargo directly (remember --test-threads=1)
+cargo test -- --test-threads=1
 
 # Run with verbose output
-cargo test -- --nocapture
+make test-verbose
 ```
 
 ## License
