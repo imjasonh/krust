@@ -85,6 +85,7 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
       with:
+        toolchain: stable
         components: rustfmt
     - name: Check formatting
       run: cargo fmt -- --check
@@ -97,6 +98,7 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
       with:
+        toolchain: stable
         components: clippy
     - name: Run clippy
       run: cargo clippy -- -D warnings
