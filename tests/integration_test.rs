@@ -355,12 +355,24 @@ fn test_platform_detection_from_base_image() -> Result<()> {
 
     // The default base image (cgr.dev/chainguard/static:latest) supports multiple platforms
     // so we should see platform detection happening
-    cmd.assert()
-        .success()
-        .stderr(predicate::str::contains(
-            "Detecting available platforms from base image",
-        ))
-        .stderr(predicate::str::contains("Detected platforms"));
+    let output = cmd.output()?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // We should always see platform detection
+    assert!(stderr.contains("Detecting available platforms from base image"));
+    assert!(stderr.contains("Detected platforms"));
+
+    // The build might fail if we don't have all cross-compilation toolchains
+    // (e.g., on ARM runners trying to build for x86_64)
+    if !output.status.success() {
+        assert!(
+            stderr.contains("linker")
+                || stderr.contains("target may not be installed")
+                || stderr.contains("cross-compilation"),
+            "Build failed for unexpected reason: {}",
+            stderr
+        );
+    }
     Ok(())
 }
 

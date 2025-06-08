@@ -40,24 +40,6 @@ rustup target add x86_64-unknown-linux-musl
 # For linux/arm64
 rustup target add aarch64-unknown-linux-musl
 
-# For linux/arm/v7
-rustup target add armv7-unknown-linux-musleabihf
-
-# For linux/arm/v6
-rustup target add arm-unknown-linux-musleabihf
-
-# For linux/386
-rustup target add i686-unknown-linux-musl
-
-# For linux/ppc64le
-rustup target add powerpc64le-unknown-linux-musl
-
-# For linux/s390x
-rustup target add s390x-unknown-linux-musl
-
-# For linux/riscv64
-rustup target add riscv64gc-unknown-linux-musl
-
 # Or install all supported targets at once
 rustup target add \
     x86_64-unknown-linux-musl \
