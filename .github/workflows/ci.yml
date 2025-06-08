@@ -69,14 +69,53 @@ jobs:
     - name: Run clippy
       run: cargo clippy -- -D warnings
 
-  coverage:
-    name: Code coverage
+  integration:
+    name: Integration Test
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-    - name: Install cargo-tarpaulin
-      run: cargo install cargo-tarpaulin
-    - name: Generate code coverage
-      run: cargo tarpaulin --verbose --workspace
+      with:
+        targets: x86_64-unknown-linux-musl
+    - name: Install musl tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools
+    - name: Build krust
+      run: cargo build --release
+    - name: Add krust to PATH
+      run: echo "${{ github.workspace }}/target/release" >> $GITHUB_PATH
+    - name: Test krust version
+      run: krust version
+    - name: Build and run example with krust
+      run: |
+        cd example/hello-krust
+        # Build and push to ttl.sh (ephemeral registry)
+        export KRUST_REPO=ttl.sh/${{ github.run_id }}
+        IMAGE_REF=$(krust build ./)
+        echo "Built image: $IMAGE_REF"
+        # Run the image
+        docker run --rm $IMAGE_REF
+    - name: Test docker run with command substitution
+      run: |
+        cd example/hello-krust
+        export KRUST_REPO=ttl.sh/${{ github.run_id }}-test2
+        docker run --rm $(krust build ./)
+    - name: Test build with --no-push
+      run: |
+        cd example/hello-krust
+        krust build --no-push --image local.test/hello:latest ./
+
+  # Takes too long to run on CI, so it's commented out for now.
+  # coverage:
+  #   name: Code coverage
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - name: Install Rust
+  #     uses: dtolnay/rust-toolchain@stable
+  #   - name: Install cargo-tarpaulin
+  #     run: cargo install cargo-tarpaulin
+  #   - name: Generate code coverage
+  #     run: cargo tarpaulin --verbose --workspace
