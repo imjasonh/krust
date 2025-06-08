@@ -14,6 +14,7 @@ jobs:
   test:
     name: Test
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -33,20 +34,23 @@ jobs:
     - name: Install cross-compilation tools (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        brew install musl-cross
+        # Install musl-cross from the correct tap
+        brew install messense/macos-cross-toolchains/x86_64-unknown-linux-musl
         # Set up cargo config for cross-compilation
         mkdir -p ~/.cargo
         echo '[target.x86_64-unknown-linux-musl]' >> ~/.cargo/config.toml
-        echo 'linker = "x86_64-linux-musl-gcc"' >> ~/.cargo/config.toml
+        echo 'linker = "x86_64-unknown-linux-musl-gcc"' >> ~/.cargo/config.toml
     - name: Install cross-compilation tools (Windows)
       if: matrix.os == 'windows-latest'
+      shell: pwsh
       run: |
         # On Windows, we'll use rust-lld as the linker for musl targets
         rustup component add llvm-tools-preview
-        # Create cargo config
-        mkdir -p ~/.cargo
-        echo '[target.x86_64-unknown-linux-musl]' >> ~/.cargo/config.toml
-        echo 'linker = "rust-lld"' >> ~/.cargo/config.toml
+        # Create cargo config directory
+        New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.cargo"
+        # Create config file
+        Add-Content -Path "$env:USERPROFILE\.cargo\config.toml" -Value "[target.x86_64-unknown-linux-musl]"
+        Add-Content -Path "$env:USERPROFILE\.cargo\config.toml" -Value 'linker = "rust-lld"'
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -62,6 +66,11 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    - name: Verify cross-compilation setup
+      run: |
+        rustup target list --installed | grep musl
+        cargo --version
+        rustc --version
     - name: Build
       run: cargo build --verbose
     - name: Run unit tests

@@ -56,7 +56,13 @@ impl RustBuilder {
                     debug!("Using linker: rust-lld");
                 } else {
                     // Try common linker names on other platforms
-                    for linker in &["x86_64-linux-musl-gcc", "musl-gcc", "x86_64-linux-gnu-gcc"] {
+                    let linkers = if cfg!(target_os = "macos") {
+                        vec!["x86_64-unknown-linux-musl-gcc", "x86_64-linux-musl-gcc", "musl-gcc"]
+                    } else {
+                        vec!["x86_64-linux-musl-gcc", "musl-gcc", "x86_64-linux-gnu-gcc"]
+                    };
+                    
+                    for linker in &linkers {
                         if which::which(linker).is_ok() {
                             cmd.env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", linker);
                             debug!("Using linker: {}", linker);
