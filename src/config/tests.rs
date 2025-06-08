@@ -5,7 +5,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.base_image, "gcr.io/distroless/static:nonroot");
+        assert_eq!(config.base_image, "cgr.dev/chainguard/static:latest");
         assert!(config.default_registry.is_none());
         assert!(config.registries.is_empty());
     }

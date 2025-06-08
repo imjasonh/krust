@@ -53,6 +53,7 @@ fn test_build_requires_repo_or_image() -> Result<()> {
     let mut cmd = Command::cargo_bin("krust")?;
     cmd.arg("build")
         .arg("--no-push")
+        .arg(".") // Explicitly pass current directory
         .current_dir(&example_dir)
         .env_remove("KRUST_REPO");
 
@@ -71,6 +72,7 @@ fn test_build_with_krust_repo_env() -> Result<()> {
     let mut cmd = Command::cargo_bin("krust")?;
     cmd.arg("build")
         .arg("--no-push")
+        .arg(".") // Explicitly pass current directory
         .env("KRUST_REPO", "test.local")
         .current_dir(&example_dir);
 
@@ -95,6 +97,7 @@ fn test_command_substitution_syntax() -> Result<()> {
         .arg("--no-push")
         .arg("--image")
         .arg("test.local/hello:latest")
+        .arg(".") // Explicitly pass current directory
         .current_dir(&example_dir)
         .output()?;
 
@@ -122,6 +125,7 @@ fn test_verbose_logging() -> Result<()> {
         .arg("--no-push")
         .arg("--image")
         .arg("test.local/hello:latest")
+        .arg(".") // Explicitly pass current directory
         .current_dir(&example_dir);
 
     cmd.assert()
@@ -151,6 +155,7 @@ fn test_full_build_and_run_workflow() -> Result<()> {
     let mut cmd = Command::cargo_bin("krust")?;
     let output = cmd
         .arg("build")
+        .arg(".") // Explicitly pass current directory
         .env("KRUST_REPO", "ttl.sh/krust-test")
         .current_dir(&example_dir)
         .output()?;

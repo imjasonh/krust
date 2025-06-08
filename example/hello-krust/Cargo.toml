@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+
+# Example: Configure krust to use a specific base image for this project
+[package.metadata.krust]
+base-image = "cgr.dev/chainguard/static:latest"

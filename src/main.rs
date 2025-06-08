@@ -38,6 +38,14 @@ async fn main() -> Result<()> {
             let config = Config::load()?;
             let project_path = path.unwrap_or_else(|| PathBuf::from("."));
 
+            // Load project-specific config from Cargo.toml
+            let project_config = Config::load_project_config(&project_path)?;
+
+            // Determine base image (project config takes precedence)
+            let base_image = project_config
+                .base_image
+                .unwrap_or(config.base_image.clone());
+
             // Determine the image name
             let image_ref = if let Some(image) = image {
                 // Use explicit image if provided
@@ -56,8 +64,7 @@ async fn main() -> Result<()> {
             let binary_path = builder.build()?;
 
             // Build container image
-            let image_builder =
-                ImageBuilder::new(binary_path, config.base_image.clone(), platform.clone());
+            let image_builder = ImageBuilder::new(binary_path, base_image, platform.clone());
 
             let (config_data, layer_data, manifest) = image_builder.build()?;
 

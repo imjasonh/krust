@@ -144,10 +144,23 @@ The tradeoff is that musl has slightly different behavior than glibc in some edg
 
 ## Configuration
 
-krust looks for configuration at `~/.config/krust/config.toml`:
+### Project Configuration (Cargo.toml)
+
+You can configure krust on a per-project basis by adding a `[package.metadata.krust]` section to your project's `Cargo.toml`:
 
 ```toml
-base_image = "gcr.io/distroless/static:nonroot"
+[package.metadata.krust]
+base-image = "cgr.dev/chainguard/static:latest"  # Override the default base image
+```
+
+This is the idiomatic way to configure build tools in Rust, similar to how `cargo-deb`, `wasm-pack`, and other Cargo extensions work.
+
+### Global Configuration
+
+krust also looks for global configuration at `~/.config/krust/config.toml`:
+
+```toml
+base_image = "cgr.dev/chainguard/static:latest"  # Default base image for all projects
 default_registry = "ghcr.io"
 
 [build]
@@ -159,6 +172,13 @@ password = "mytoken"
 ```
 
 Note: Registry authentication is not yet implemented. Currently, krust uses anonymous authentication.
+
+### Configuration Precedence
+
+When determining the base image, krust uses this precedence order:
+1. Project-specific config in `Cargo.toml` (highest priority)
+2. Global config in `~/.config/krust/config.toml`
+3. Built-in default: `cgr.dev/chainguard/static:latest` (lowest priority)
 
 ## Key Features
 
