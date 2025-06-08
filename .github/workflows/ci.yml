@@ -73,9 +73,9 @@ jobs:
     - name: Build
       run: cargo build --verbose
     - name: Run unit tests
-      run: cargo test --verbose
+      run: cargo test --verbose -- --test-threads=1
     - name: Run e2e tests
-      run: cargo test --test '*' --verbose
+      run: cargo test --test '*' --verbose -- --test-threads=1
 
   fmt:
     name: Rustfmt

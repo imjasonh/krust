@@ -25,14 +25,14 @@ repos:
 
       - id: cargo-test
         name: cargo test
-        entry: cargo test
+        entry: cargo test -- --test-threads=1
         language: system
         types: [rust]
         pass_filenames: false
 
       - id: cargo-test-e2e
         name: cargo e2e tests
-        entry: cargo test --test '*'
+        entry: cargo test --test '*' -- --test-threads=1
         language: system
         types: [rust]
         pass_filenames: false
