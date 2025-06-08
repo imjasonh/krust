@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 #[cfg(test)]
 mod tests;
@@ -87,7 +87,11 @@ impl RustBuilder {
         let output = cmd.output().context("Failed to execute cargo build")?;
 
         if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
+            error!("Cargo build failed!");
+            error!("stdout:\n{}", stdout);
+            error!("stderr:\n{}", stderr);
             anyhow::bail!("Cargo build failed: {}", stderr);
         }
 

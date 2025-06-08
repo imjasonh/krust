@@ -14,7 +14,6 @@ jobs:
   test:
     name: Test
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -51,6 +50,9 @@ jobs:
         # Create config file
         Add-Content -Path "$env:USERPROFILE\.cargo\config.toml" -Value "[target.x86_64-unknown-linux-musl]"
         Add-Content -Path "$env:USERPROFILE\.cargo\config.toml" -Value 'linker = "rust-lld"'
+    - name: Set up Docker (Windows and macOS)
+      if: matrix.os == 'windows-latest' || matrix.os == 'macos-latest'
+      uses: docker-practice/actions-setup-docker@v1
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -68,9 +70,19 @@ jobs:
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
     - name: Verify cross-compilation setup
       run: |
-        rustup target list --installed | grep musl
+        echo "Installed targets:"
+        rustup target list --installed
+        echo "Cargo version:"
         cargo --version
+        echo "Rustc version:"
         rustc --version
+        echo "Available linkers:"
+        which x86_64-unknown-linux-musl-gcc || echo "x86_64-unknown-linux-musl-gcc not found"
+        which x86_64-linux-musl-gcc || echo "x86_64-linux-musl-gcc not found"
+        which musl-gcc || echo "musl-gcc not found"
+        which rust-lld || echo "rust-lld not found"
+        echo "Cargo config:"
+        cat ~/.cargo/config.toml || echo "No cargo config found"
     - name: Build
       run: cargo build --verbose
     - name: Run unit tests
