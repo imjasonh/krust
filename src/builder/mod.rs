@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tempfile::TempDir;
 use tracing::{debug, error, info};
 
 #[cfg(test)]
@@ -10,6 +11,11 @@ pub struct RustBuilder {
     project_path: PathBuf,
     target: String,
     cargo_args: Vec<String>,
+}
+
+pub struct BuildResult {
+    pub binary_path: PathBuf,
+    _temp_dir: TempDir, // Keep temp dir alive until BuildResult is dropped
 }
 
 impl RustBuilder {
@@ -26,14 +32,21 @@ impl RustBuilder {
         self
     }
 
-    pub fn build(&self) -> Result<PathBuf> {
+    pub fn build(&self) -> Result<BuildResult> {
         info!("Building Rust project at {:?}", self.project_path);
+
+        // Use a unique target directory to avoid conflicts between concurrent builds
+        let temp_target_dir =
+            tempfile::tempdir().context("Failed to create temporary directory")?;
+        let target_dir = temp_target_dir.path();
 
         let mut cmd = Command::new("cargo");
         cmd.arg("build")
             .arg("--release")
             .arg("--target")
             .arg(&self.target)
+            .arg("--target-dir")
+            .arg(target_dir)
             .current_dir(&self.project_path);
 
         // Set RUSTFLAGS for static linking
@@ -116,6 +129,7 @@ impl RustBuilder {
         debug!("Running command: {:?}", cmd);
         debug!("RUSTFLAGS: {}", rustflags);
 
+        info!("Running cargo build for target: {}", self.target);
         let output = cmd.output().context("Failed to execute cargo build")?;
 
         if !output.status.success() {
@@ -128,19 +142,30 @@ impl RustBuilder {
         }
 
         let binary_name = self.get_binary_name()?;
-        let binary_path = self
-            .project_path
-            .join("target")
+        let binary_path = target_dir
             .join(&self.target)
             .join("release")
             .join(&binary_name);
+
+        // Sometimes cargo build completes but the binary isn't immediately visible
+        // due to filesystem sync issues. Give it a moment.
+        let mut retries = 0;
+        while !binary_path.exists() && retries < 3 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            retries += 1;
+        }
 
         if !binary_path.exists() {
             anyhow::bail!("Built binary not found at {:?}", binary_path);
         }
 
         info!("Successfully built binary at {:?}", binary_path);
-        Ok(binary_path)
+
+        // Return the build result with the temp directory to keep it alive
+        Ok(BuildResult {
+            binary_path,
+            _temp_dir: temp_target_dir,
+        })
     }
 
     fn get_binary_name(&self) -> Result<String> {

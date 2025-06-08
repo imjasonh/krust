@@ -100,8 +100,17 @@ krust build example/hello-krust --no-push
 # Use a specific image name (overrides KRUST_REPO)
 krust build --image myregistry.io/myapp:v1.0
 
-# Build for a different platform
+# Build for a specific platform
 krust build --platform linux/arm64
+
+# Build for multiple platforms (multi-arch)
+krust build --platform linux/amd64,linux/arm64
+
+# Or specify platforms separately
+krust build --platform linux/amd64 --platform linux/arm64
+
+# Default behavior builds for both amd64 and arm64
+krust build
 ```
 
 ### Build with custom cargo arguments
@@ -115,6 +124,31 @@ krust build -- --features=prod
 - `linux/amd64` (x86_64-unknown-linux-musl)
 - `linux/arm64` (aarch64-unknown-linux-musl)
 - `linux/arm/v7` (armv7-unknown-linux-musleabihf)
+
+### Multi-Architecture Images
+
+krust always pushes OCI image indexes (manifest lists) for consistency:
+1. Builds each platform separately with its own binary
+2. Pushes platform-specific images with unique tags
+3. Creates and pushes a manifest list that references all platforms
+4. Returns the manifest list digest for use with Docker/Kubernetes
+
+This means even single-platform builds result in a manifest list, ensuring a uniform interface regardless of the number of platforms built.
+
+## Build Process
+
+krust builds your Rust application in an isolated environment:
+
+1. **Temporary build directory** - Each build uses a unique temporary directory via `--target-dir`
+2. **Static compilation** - Builds with `RUSTFLAGS="-C target-feature=+crt-static"` for musl targets
+3. **Cross-compilation** - Automatically configures the appropriate linker for the target platform
+4. **Binary extraction** - Copies the built binary from the temp directory for packaging
+5. **Container creation** - Packages the binary into a minimal OCI image
+
+This approach ensures:
+- No conflicts between concurrent builds
+- Clean builds without interference from previous compilations
+- Safe parallel execution of multiple krust instances
 
 ## Static Binaries
 
@@ -185,9 +219,12 @@ When determining the base image, krust uses this precedence order:
 - **Docker-free** - Builds OCI container images without requiring Docker daemon
 - **Static binaries** - Produces truly static binaries using musl libc
 - **Composable** - Outputs image digest to stdout, enabling `docker run $(krust build)`
+- **Multi-arch support** - Build for multiple platforms in a single command
 - **Cross-platform** - Supports multiple architectures (amd64, arm64, arm/v7)
 - **Minimal images** - Uses distroless base images for security and size
 - **OCI compliant** - Works with any OCI-compliant container registry
+- **Isolated builds** - Each build uses a temporary directory to avoid conflicts
+- **Concurrent builds** - Multiple builds can run safely in parallel
 
 ## Example
 
@@ -259,6 +296,15 @@ This is normal when building linux/amd64 images on Apple Silicon. The images wil
 # Clone the repository
 git clone https://github.com/imjasonh/krust.git
 cd krust
+
+# Install cross-compilation toolchain (required for tests)
+# On macOS:
+brew install messense/macos-cross-toolchains/x86_64-unknown-linux-musl
+brew install messense/macos-cross-toolchains/aarch64-unknown-linux-musl
+
+# Install Rust targets
+rustup target add x86_64-unknown-linux-musl
+rustup target add aarch64-unknown-linux-musl  # Optional, for ARM64 support
 
 # Install pre-commit hooks
 pip install pre-commit

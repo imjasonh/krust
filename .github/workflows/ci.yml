@@ -16,7 +16,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm]
         rust: [stable, beta]
     steps:
     - uses: actions/checkout@v4
@@ -24,12 +24,11 @@ jobs:
       uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.rust }}
-        targets: x86_64-unknown-linux-musl
-    - name: Install cross-compilation tools (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
+        targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+    - name: Install cross-compilation tools for both architectures
       run: |
         sudo apt-get update
-        sudo apt-get install -y musl-tools
+        sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -45,6 +44,16 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    - name: Setup cargo config for cross-compilation
+      run: |
+        mkdir -p .cargo
+        cat > .cargo/config.toml << 'EOF'
+        [target.x86_64-unknown-linux-musl]
+        linker = "x86_64-linux-musl-gcc"
+
+        [target.aarch64-unknown-linux-musl]
+        linker = "aarch64-linux-gnu-gcc"
+        EOF
     - name: Verify cross-compilation setup (Unix)
       run: |
         echo "Installed targets:"
@@ -57,9 +66,10 @@ jobs:
         which x86_64-unknown-linux-musl-gcc || echo "x86_64-unknown-linux-musl-gcc not found"
         which x86_64-linux-musl-gcc || echo "x86_64-linux-musl-gcc not found"
         which musl-gcc || echo "musl-gcc not found"
+        which aarch64-linux-gnu-gcc || echo "aarch64-linux-gnu-gcc not found"
         which rust-lld || echo "rust-lld not found"
         echo "Cargo config:"
-        cat ~/.cargo/config.toml || echo "No cargo config found"
+        cat .cargo/config.toml || echo "No cargo config found"
     - name: Build
       run: cargo build --verbose
     - name: Run unit tests
@@ -105,11 +115,21 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: x86_64-unknown-linux-musl
+        targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
     - name: Install musl tools
       run: |
         sudo apt-get update
-        sudo apt-get install -y musl-tools
+        sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
+    - name: Setup cargo config for cross-compilation
+      run: |
+        mkdir -p .cargo
+        cat > .cargo/config.toml << 'EOF'
+        [target.x86_64-unknown-linux-musl]
+        linker = "x86_64-linux-musl-gcc"
+
+        [target.aarch64-unknown-linux-musl]
+        linker = "aarch64-linux-gnu-gcc"
+        EOF
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     - name: Build krust
@@ -136,6 +156,15 @@ jobs:
       run: |
         cd example/hello-krust
         krust build --no-push --image local.test/hello:latest ./
+    - name: Test multi-arch build and run
+      run: |
+        cd example/hello-krust
+        # Build for both platforms and push
+        export KRUST_REPO=ttl.sh/${{ github.run_id }}-multiarch
+        IMAGE_REF=$(krust build --platform linux/amd64,linux/arm64 ./)
+        echo "Built multi-arch image: $IMAGE_REF"
+        # Run the image - should automatically select the right architecture
+        docker run --rm $IMAGE_REF
 
   # Takes too long to run on CI, so it's commented out for now.
   # coverage:

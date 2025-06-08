@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use oci_distribution::manifest::{OciDescriptor, OciImageManifest, OciManifest};
 use oci_distribution::secrets::RegistryAuth;
 use oci_distribution::{Client, Reference};
+use std::str::FromStr;
 use tracing::{debug, info};
 
 #[cfg(test)]
@@ -24,7 +25,7 @@ impl RegistryClient {
         image_ref: &str,
         config_data: Vec<u8>,
         layers: Vec<(Vec<u8>, String)>,
-    ) -> Result<String> {
+    ) -> Result<(String, usize)> {
         let reference: Reference = image_ref
             .parse()
             .context("Failed to parse image reference")?;
@@ -100,7 +101,82 @@ impl RegistryClient {
         let repository = reference.repository();
         let digest_ref = format!("{}/{}@{}", registry, repository, digest);
 
-        Ok(digest_ref)
+        // Return both the digest ref and the actual manifest size
+        let manifest_size = serde_json::to_vec(&manifest)?.len();
+        Ok((digest_ref, manifest_size))
+    }
+
+    pub async fn push_manifest_list(
+        &mut self,
+        image_ref: &str,
+        manifest_descriptors: Vec<crate::manifest::ManifestDescriptor>,
+    ) -> Result<String> {
+        let reference = Reference::from_str(image_ref)
+            .context(format!("Failed to parse image reference: {}", image_ref))?;
+
+        // Create the image index
+        let index = crate::manifest::ImageIndex::new(manifest_descriptors);
+
+        // Convert to OCI index
+        let oci_manifests: Vec<oci_distribution::manifest::ImageIndexEntry> = index
+            .manifests
+            .iter()
+            .map(|m| oci_distribution::manifest::ImageIndexEntry {
+                media_type: m.media_type.clone(),
+                digest: m.digest.clone(),
+                size: m.size,
+                platform: Some(oci_distribution::manifest::Platform {
+                    architecture: m.platform.architecture.clone(),
+                    os: m.platform.os.clone(),
+                    os_version: None,
+                    os_features: None,
+                    variant: m.platform.variant.clone(),
+                    features: None,
+                }),
+                annotations: None,
+            })
+            .collect();
+
+        let oci_index = oci_distribution::manifest::OciImageIndex {
+            schema_version: 2,
+            media_type: Some("application/vnd.oci.image.index.v1+json".to_string()),
+            manifests: oci_manifests,
+            annotations: None,
+        };
+
+        // Wrap in OciManifest enum
+        let manifest = oci_distribution::manifest::OciManifest::ImageIndex(oci_index);
+
+        debug!(
+            "Pushing manifest list with {} manifests",
+            index.manifests.len()
+        );
+        for m in &index.manifests {
+            debug!(
+                "  - Platform: {}/{}, digest: {}",
+                m.platform.os, m.platform.architecture, m.digest
+            );
+        }
+        let manifest_url = self
+            .client
+            .push_manifest(&reference, &manifest)
+            .await
+            .context("Failed to push manifest list")?;
+
+        info!("Successfully pushed manifest list to {}", manifest_url);
+
+        // Extract digest from the manifest URL
+        let digest = manifest_url
+            .split('/')
+            .next_back()
+            .context("Failed to extract digest from manifest URL")?;
+
+        // Build the full image reference with digest
+        let registry = reference.registry();
+        let repository = reference.repository();
+        let image_ref = format!("{}/{}@{}", registry, repository, digest);
+
+        Ok(image_ref)
     }
 }
 

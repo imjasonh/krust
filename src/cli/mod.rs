@@ -25,9 +25,10 @@ pub enum Commands {
         #[arg(short, long, env = "KRUST_IMAGE")]
         image: Option<String>,
 
-        /// Target platform (e.g., linux/amd64, linux/arm64)
-        #[arg(long, default_value = "linux/amd64")]
-        platform: String,
+        /// Target platforms (e.g., linux/amd64, linux/arm64)
+        /// Can be specified multiple times or as a comma-separated list
+        #[arg(long, value_delimiter = ',')]
+        platform: Option<Vec<String>>,
 
         /// Skip pushing the image to the registry after building
         #[arg(long)]
