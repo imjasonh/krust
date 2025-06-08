@@ -1,7 +1,8 @@
 //! Integration tests for authentication
 
 use anyhow::Result;
-use krust::auth::{AuthConfig, DefaultKeychain, Keychain};
+use krust::auth::{resolve_auth, AuthConfig};
+use oci_distribution::secrets::RegistryAuth;
 use std::fs;
 use tempfile::TempDir;
 
@@ -30,25 +31,30 @@ fn test_auth_integration_with_docker_config() -> Result<()> {
     // Set HOME to temp directory
     std::env::set_var("HOME", temp_dir.path());
 
-    let keychain = DefaultKeychain::new();
-
     // Test GitHub Container Registry auth
-    let ghcr_auth = keychain.resolve("ghcr.io/user/image:tag")?;
-    let ghcr_config = ghcr_auth.authorization()?;
-    assert!(!ghcr_config.is_anonymous());
-    assert_eq!(ghcr_config.auth, Some("dGVzdDp0ZXN0MTIz".to_string()));
+    let ghcr_auth = resolve_auth("ghcr.io/user/image:tag")?;
+    match ghcr_auth {
+        RegistryAuth::Basic(user, pass) => {
+            // The base64 "dGVzdDp0ZXN0MTIz" decodes to "test:test123"
+            assert_eq!(user, "test");
+            assert_eq!(pass, "test123");
+        }
+        _ => panic!("Expected Basic auth for ghcr.io"),
+    }
 
     // Test Docker Hub auth
-    let docker_auth = keychain.resolve("docker.io/library/ubuntu:latest")?;
-    let docker_config = docker_auth.authorization()?;
-    assert!(!docker_config.is_anonymous());
-    assert_eq!(docker_config.username, Some("testuser".to_string()));
-    assert_eq!(docker_config.password, Some("testpass".to_string()));
+    let docker_auth = resolve_auth("docker.io/library/ubuntu:latest")?;
+    match docker_auth {
+        RegistryAuth::Basic(user, pass) => {
+            assert_eq!(user, "testuser");
+            assert_eq!(pass, "testpass");
+        }
+        _ => panic!("Expected Basic auth for docker.io"),
+    }
 
     // Test unknown registry returns anonymous
-    let unknown_auth = keychain.resolve("unknown.registry.io/image:tag")?;
-    let unknown_config = unknown_auth.authorization()?;
-    assert!(unknown_config.is_anonymous());
+    let unknown_auth = resolve_auth("unknown.registry.io/image:tag")?;
+    assert!(matches!(unknown_auth, RegistryAuth::Anonymous));
 
     // Clean up
     std::env::remove_var("HOME");

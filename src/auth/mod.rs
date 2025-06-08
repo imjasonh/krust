@@ -8,10 +8,8 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-mod keychain;
 mod simple;
 
-pub use keychain::{DefaultKeychain, Keychain};
 pub use simple::resolve_auth;
 
 /// Authentication configuration containing credentials
@@ -111,62 +109,6 @@ impl AuthConfig {
         }
 
         RegistryAuth::Anonymous
-    }
-}
-
-/// Trait for types that can provide authentication
-pub trait Authenticator: Send + Sync {
-    /// Get the authentication configuration
-    fn authorization(&self) -> Result<AuthConfig>;
-}
-
-/// Anonymous authenticator
-pub struct Anonymous;
-
-impl Authenticator for Anonymous {
-    fn authorization(&self) -> Result<AuthConfig> {
-        Ok(AuthConfig::anonymous())
-    }
-}
-
-/// Basic authenticator with username and password
-pub struct Basic {
-    username: String,
-    password: String,
-}
-
-impl Basic {
-    pub fn new(username: String, password: String) -> Self {
-        Self { username, password }
-    }
-}
-
-impl Authenticator for Basic {
-    fn authorization(&self) -> Result<AuthConfig> {
-        Ok(AuthConfig::new(
-            self.username.clone(),
-            self.password.clone(),
-        ))
-    }
-}
-
-/// Bearer token authenticator
-pub struct Bearer {
-    token: String,
-}
-
-impl Bearer {
-    pub fn new(token: String) -> Self {
-        Self { token }
-    }
-}
-
-impl Authenticator for Bearer {
-    fn authorization(&self) -> Result<AuthConfig> {
-        Ok(AuthConfig {
-            registry_token: Some(self.token.clone()),
-            ..Default::default()
-        })
     }
 }
 
