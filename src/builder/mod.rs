@@ -50,10 +50,42 @@ impl RustBuilder {
         if cfg!(not(target_os = "linux")) && self.target.contains("linux") {
             // Check if we have a musl cross-compiler available
             if self.target.contains("x86_64-unknown-linux-musl") {
-                // On Windows, prefer rust-lld
+                // On Windows, use rust-lld with full path
                 if cfg!(target_os = "windows") {
-                    cmd.env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "rust-lld");
-                    debug!("Using linker: rust-lld");
+                    // Get the rust sysroot to find rust-lld
+                    let sysroot_output = Command::new("rustc")
+                        .arg("--print")
+                        .arg("sysroot")
+                        .output()
+                        .context("Failed to get rustc sysroot")?;
+
+                    if sysroot_output.status.success() {
+                        let sysroot = String::from_utf8_lossy(&sysroot_output.stdout)
+                            .trim()
+                            .to_string();
+                        let rust_lld = PathBuf::from(&sysroot)
+                            .join("lib")
+                            .join("rustlib")
+                            .join("x86_64-pc-windows-msvc")
+                            .join("bin")
+                            .join("rust-lld.exe");
+
+                        if rust_lld.exists() {
+                            cmd.env(
+                                "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER",
+                                rust_lld.to_string_lossy().to_string(),
+                            );
+                            debug!("Using linker: {}", rust_lld.display());
+                        } else {
+                            // Fallback to just "rust-lld" and hope it's in PATH
+                            cmd.env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "rust-lld");
+                            debug!("Using linker: rust-lld (in PATH)");
+                        }
+                    } else {
+                        // Fallback to just "rust-lld"
+                        cmd.env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "rust-lld");
+                        debug!("Using linker: rust-lld (fallback)");
+                    }
                 } else {
                     // Try common linker names on other platforms
                     let linkers = if cfg!(target_os = "macos") {

@@ -45,14 +45,19 @@ jobs:
       run: |
         # On Windows, we'll use rust-lld as the linker for musl targets
         rustup component add llvm-tools-preview
+        # Find rust-lld location
+        $rustc_sysroot = rustc --print sysroot
+        $rust_lld = "$rustc_sysroot\lib\rustlib\x86_64-pc-windows-msvc\bin\rust-lld.exe"
+        Write-Host "rust-lld location: $rust_lld"
         # Create cargo config directory
         New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.cargo"
-        # Create config file
+        # Create config file with full path to rust-lld
         Add-Content -Path "$env:USERPROFILE\.cargo\config.toml" -Value "[target.x86_64-unknown-linux-musl]"
-        Add-Content -Path "$env:USERPROFILE\.cargo\config.toml" -Value 'linker = "rust-lld"'
-    - name: Set up Docker (Windows and macOS)
-      if: matrix.os == 'windows-latest' || matrix.os == 'macos-latest'
-      uses: docker-practice/actions-setup-docker@v1
+        Add-Content -Path "$env:USERPROFILE\.cargo\config.toml" -Value "linker = `"$rust_lld`""
+    - name: Set up Docker for all platforms
+      uses: docker/setup-buildx-action@v3
+      with:
+        install: true
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -68,7 +73,8 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-    - name: Verify cross-compilation setup
+    - name: Verify cross-compilation setup (Unix)
+      if: matrix.os != 'windows-latest'
       run: |
         echo "Installed targets:"
         rustup target list --installed
@@ -83,6 +89,26 @@ jobs:
         which rust-lld || echo "rust-lld not found"
         echo "Cargo config:"
         cat ~/.cargo/config.toml || echo "No cargo config found"
+    - name: Verify cross-compilation setup (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: pwsh
+      run: |
+        Write-Host "Installed targets:"
+        rustup target list --installed
+        Write-Host "Cargo version:"
+        cargo --version
+        Write-Host "Rustc version:"
+        rustc --version
+        Write-Host "rust-lld location:"
+        $rustc_sysroot = rustc --print sysroot
+        $rust_lld = "$rustc_sysroot\lib\rustlib\x86_64-pc-windows-msvc\bin\rust-lld.exe"
+        if (Test-Path $rust_lld) {
+          Write-Host "$rust_lld exists"
+        } else {
+          Write-Host "$rust_lld not found"
+        }
+        Write-Host "Cargo config:"
+        Get-Content "$env:USERPROFILE\.cargo\config.toml" -ErrorAction SilentlyContinue || Write-Host "No cargo config found"
     - name: Build
       run: cargo build --verbose
     - name: Run unit tests

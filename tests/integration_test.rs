@@ -134,8 +134,15 @@ fn test_verbose_logging() -> Result<()> {
 #[cfg_attr(not(ci), ignore)] // Run in CI, but allow skipping locally
 fn test_full_build_and_run_workflow() -> Result<()> {
     // This test requires Docker
-    if StdCommand::new("docker").arg("version").output().is_err() {
-        panic!("Docker is required for this test but is not available");
+    let docker_check = StdCommand::new("docker").arg("version").output();
+    match docker_check {
+        Ok(output) if output.status.success() => {
+            // Docker is available, proceed with test
+        }
+        _ => {
+            // Docker not available or not working
+            panic!("Docker is required for this test but is not available");
+        }
     }
 
     // Get the example project directory
