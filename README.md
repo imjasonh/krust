@@ -127,12 +127,13 @@ krust build -- --features=prod
 
 ### Multi-Architecture Images
 
-When building for multiple platforms, krust:
+krust always pushes OCI image indexes (manifest lists) for consistency:
 1. Builds each platform separately with its own binary
-2. Pushes platform-specific images with appropriate tags
-3. Creates references that Docker/Kubernetes can use to automatically select the right architecture
+2. Pushes platform-specific images with unique tags
+3. Creates and pushes a manifest list that references all platforms
+4. Returns the manifest list digest for use with Docker/Kubernetes
 
-Note: Full OCI image index (manifest list) support is planned for a future release.
+This means even single-platform builds result in a manifest list, ensuring a uniform interface regardless of the number of platforms built.
 
 ## Build Process
 

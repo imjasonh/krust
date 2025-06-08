@@ -5,7 +5,7 @@ use krust::{
     cli::{Cli, Commands},
     config::Config,
     image::ImageBuilder,
-    manifest::{ImageIndex, ManifestDescriptor, Platform},
+    manifest::{ManifestDescriptor, Platform},
     registry::RegistryClient,
 };
 use std::path::{Path, PathBuf};
@@ -68,7 +68,6 @@ async fn main() -> Result<()> {
 
             // Build for each platform
             let mut manifest_descriptors = Vec::new();
-            let mut single_platform_digest = None;
             let auth = oci_distribution::secrets::RegistryAuth::Anonymous;
             let mut registry_client = RegistryClient::new(auth)?;
 
@@ -97,22 +96,24 @@ async fn main() -> Result<()> {
 
                     let layers = vec![(layer_data, manifest.layers[0].media_type.clone())];
 
-                    // For single platform, push to the main tag
-                    let push_ref = if platforms.len() == 1 {
-                        image_ref.clone()
+                    // For manifest lists to work properly, we need to push to a consistent location
+                    // We'll use the base image ref with a unique tag for each platform
+                    let (base_ref, _) = if let Some(pos) = image_ref.rfind(':') {
+                        (
+                            image_ref[..pos].to_string(),
+                            image_ref[pos + 1..].to_string(),
+                        )
                     } else {
-                        // For multi-platform, use platform-specific tag
-                        format!("{}-{}", image_ref, platform_str.replace('/', "-"))
+                        (image_ref.to_string(), "latest".to_string())
                     };
 
-                    let digest_ref = registry_client
-                        .push_image(&push_ref, config_data, layers)
-                        .await?;
+                    // Create a unique tag for this platform to avoid conflicts
+                    let platform_tag = format!("platform-{}", platform_str.replace('/', "-"));
+                    let platform_ref = format!("{}:{}", base_ref, platform_tag);
 
-                    // Store digest for single platform builds
-                    if platforms.len() == 1 {
-                        single_platform_digest = Some(digest_ref.clone());
-                    }
+                    let (digest_ref, manifest_size) = registry_client
+                        .push_image(&platform_ref, config_data, layers)
+                        .await?;
 
                     // Parse platform string
                     let parts: Vec<&str> = platform_str.split('/').collect();
@@ -122,11 +123,20 @@ async fn main() -> Result<()> {
                         return Err(anyhow::anyhow!("Invalid platform format: {}", platform_str));
                     };
 
+                    // Extract just the digest from the full reference
+                    let digest = digest_ref.split('@').next_back().unwrap_or("").to_string();
+
+                    info!("Pushed platform image to: {}", digest_ref);
+
                     // Add to manifest list
+                    info!(
+                        "Adding manifest to list - platform: {}/{}, digest: {}, size: {}",
+                        os, arch, digest, manifest_size
+                    );
                     manifest_descriptors.push(ManifestDescriptor {
-                        media_type: manifest.media_type.clone(),
-                        size: serde_json::to_vec(&manifest)?.len() as i64,
-                        digest: digest_ref.split('@').next_back().unwrap_or("").to_string(),
+                        media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
+                        size: manifest_size as i64,
+                        digest,
                         platform: Platform {
                             architecture: arch,
                             os,
@@ -136,20 +146,16 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // Create and push manifest list if not --no-push
-            if !no_push && platforms.len() > 1 {
+            // Always push manifest list if not --no-push (even for single platform)
+            if !no_push {
                 info!("Creating and pushing manifest list...");
-                let index = ImageIndex::new(manifest_descriptors);
-                let _index_data = serde_json::to_vec(&index)?;
 
-                // TODO: Push manifest list to registry
-                // For now, just print the multi-arch image reference
-                println!("{}", image_ref);
-            } else if !no_push && platforms.len() == 1 {
-                // Single platform, print the digest reference
-                if let Some(digest_ref) = single_platform_digest {
-                    println!("{}", digest_ref);
-                }
+                let manifest_list_ref = registry_client
+                    .push_manifest_list(&image_ref, manifest_descriptors)
+                    .await?;
+
+                // Output the manifest list reference
+                println!("{}", manifest_list_ref);
             } else {
                 info!(
                     "Successfully built image for {} platform(s)",

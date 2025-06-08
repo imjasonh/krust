@@ -175,17 +175,27 @@ fn test_full_build_and_run_workflow() -> Result<()> {
     let example_dir = env::current_dir()?.join("example").join("hello-krust");
 
     // Build and push to ttl.sh
+    // For the full workflow test, build for the actual native platform so Docker can run it
+    let native_platform = if cfg!(target_arch = "aarch64") {
+        "linux/arm64"
+    } else {
+        "linux/amd64"
+    };
+
     let mut cmd = Command::cargo_bin("krust")?;
     let output = cmd
         .arg("build")
         .arg("--platform")
-        .arg(get_test_platform())
+        .arg(native_platform)
         .arg(".") // Explicitly pass current directory
         .env("KRUST_REPO", "ttl.sh/krust-test")
         .current_dir(&example_dir)
         .output()?;
 
-    assert!(output.status.success(), "Build failed");
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        panic!("Build failed: {}", stderr);
+    }
 
     // Get the image reference from stdout
     let image_ref = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -196,7 +206,11 @@ fn test_full_build_and_run_workflow() -> Result<()> {
         .args(&["run", "--rm", &image_ref])
         .output()?;
 
-    assert!(docker_output.status.success(), "Docker run failed");
+    if !docker_output.status.success() {
+        let stderr = String::from_utf8_lossy(&docker_output.stderr);
+        panic!("Docker run failed with image {}: {}", image_ref, stderr);
+    }
+
     let docker_stdout = String::from_utf8_lossy(&docker_output.stdout);
     assert!(docker_stdout.contains("Hello from krust example!"));
     Ok(())
