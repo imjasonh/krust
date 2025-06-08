@@ -131,7 +131,6 @@ fn test_verbose_logging() -> Result<()> {
 }
 
 #[test]
-#[cfg_attr(not(ci), ignore)] // Run in CI, but allow skipping locally
 fn test_full_build_and_run_workflow() -> Result<()> {
     // This test requires Docker
     let docker_check = StdCommand::new("docker").arg("version").output();

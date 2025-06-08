@@ -23,6 +23,20 @@ repos:
         types: [rust]
         pass_filenames: false
 
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-test-e2e
+        name: cargo e2e tests
+        entry: cargo test --test '*'
+        language: system
+        types: [rust]
+        pass_filenames: false
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
