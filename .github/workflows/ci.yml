@@ -19,9 +19,9 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm]
         rust: [stable, beta]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # master
       with:
         toolchain: ${{ matrix.rust }}
         targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
@@ -30,17 +30,17 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
     - name: Cache cargo registry
-      uses: actions/cache@v4
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
       with:
         path: ~/.cargo/registry
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo index
-      uses: actions/cache@v4
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
       with:
         path: ~/.cargo/git
         key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo build
-      uses: actions/cache@v4
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
@@ -81,9 +81,9 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
       with:
         components: rustfmt
     - name: Check formatting
@@ -93,27 +93,43 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
       with:
         components: clippy
     - name: Run clippy
       run: cargo clippy -- -D warnings
 
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
+      with:
+        toolchain: stable
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+    - name: Run security audit
+      run: cargo audit
+
   integration:
     name: Integration Test
     runs-on: ubuntu-latest
+    needs: [test, fmt, clippy, security-audit]  # Only run after other tests pass
     services:
       registry:
         image: registry:2
         ports:
           - 5000:5000
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
       with:
+        toolchain: stable
         targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
     - name: Install musl tools
       run: |
@@ -130,7 +146,7 @@ jobs:
         linker = "aarch64-linux-gnu-gcc"
         EOF
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
     - name: Build krust
       run: cargo build --release
     - name: Add krust to PATH
@@ -169,11 +185,13 @@ jobs:
   extended-platforms:
     name: Extended Platform Support
     runs-on: ubuntu-latest
+    needs: [test, fmt, clippy, security-audit]  # Only run after basic tests pass
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
       with:
+        toolchain: stable
         targets: x86_64-unknown-linux-musl,i686-unknown-linux-musl,aarch64-unknown-linux-musl,armv7-unknown-linux-musleabihf
     - name: Install cross-compilation tools
       run: |
