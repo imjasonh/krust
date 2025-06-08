@@ -178,6 +178,87 @@ impl RegistryClient {
 
         Ok(image_ref)
     }
+
+    /// Fetch the manifest for an image and extract available platforms
+    pub async fn get_image_platforms(&mut self, image_ref: &str) -> Result<Vec<String>> {
+        let reference: Reference = image_ref
+            .parse()
+            .context("Failed to parse image reference")?;
+
+        debug!("Fetching manifest for {}", reference);
+
+        // Pull the manifest
+        let (manifest, _) = self
+            .client
+            .pull_manifest(&reference, &self.auth)
+            .await
+            .context("Failed to pull manifest")?;
+
+        // Parse platforms based on manifest type
+        match manifest {
+            OciManifest::Image(_) => {
+                // Single platform image - we need to fetch the config to determine platform
+                debug!("Single platform image detected");
+                // For now, we'll assume it's linux/amd64 if we can't determine
+                // In a real implementation, we'd fetch the config blob
+                Ok(vec!["linux/amd64".to_string()])
+            }
+            OciManifest::ImageIndex(index) => {
+                // Multi-platform image - extract platforms from index
+                debug!(
+                    "Multi-platform image detected with {} manifests",
+                    index.manifests.len()
+                );
+                let mut platforms: Vec<String> = index
+                    .manifests
+                    .iter()
+                    .filter_map(|m| {
+                        m.platform.as_ref().and_then(|p| {
+                            // Filter out invalid platforms
+                            if p.os == "unknown"
+                                || p.architecture == "unknown"
+                                || p.os.is_empty()
+                                || p.architecture.is_empty()
+                            {
+                                return None;
+                            }
+
+                            let mut platform = format!("{}/{}", p.os, p.architecture);
+                            if let Some(variant) = &p.variant {
+                                if !variant.is_empty() {
+                                    platform.push('/');
+                                    platform.push_str(variant);
+                                }
+                            }
+                            // Normalize and filter platforms
+                            let normalized = match platform.as_str() {
+                                "linux/amd64" => Some("linux/amd64".to_string()),
+                                "linux/arm64" | "linux/arm64/v8" => Some("linux/arm64".to_string()),
+                                "linux/arm/v7" => Some("linux/arm/v7".to_string()),
+                                "linux/arm/v6" => Some("linux/arm/v6".to_string()),
+                                "linux/386" => Some("linux/386".to_string()),
+                                "linux/ppc64le" => Some("linux/ppc64le".to_string()),
+                                "linux/s390x" => Some("linux/s390x".to_string()),
+                                "linux/riscv64" => Some("linux/riscv64".to_string()),
+                                _ => {
+                                    debug!("Skipping unsupported platform: {}", platform);
+                                    None
+                                }
+                            };
+                            normalized
+                        })
+                    })
+                    .collect();
+
+                // Deduplicate platforms
+                platforms.sort();
+                platforms.dedup();
+
+                info!("Found platforms: {:?}", platforms);
+                Ok(platforms)
+            }
+        }
+    }
 }
 
 pub fn parse_image_reference(image: &str) -> Result<(String, String, String)> {

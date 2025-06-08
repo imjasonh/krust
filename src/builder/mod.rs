@@ -191,6 +191,11 @@ pub fn get_rust_target_triple(platform: &str) -> Result<String> {
         "linux/amd64" => Ok("x86_64-unknown-linux-musl".to_string()),
         "linux/arm64" => Ok("aarch64-unknown-linux-musl".to_string()),
         "linux/arm/v7" => Ok("armv7-unknown-linux-musleabihf".to_string()),
+        "linux/arm/v6" => Ok("arm-unknown-linux-musleabihf".to_string()),
+        "linux/386" => Ok("i686-unknown-linux-musl".to_string()),
+        "linux/ppc64le" => Ok("powerpc64le-unknown-linux-musl".to_string()),
+        "linux/s390x" => Ok("s390x-unknown-linux-musl".to_string()),
+        "linux/riscv64" => Ok("riscv64gc-unknown-linux-musl".to_string()),
         _ => anyhow::bail!("Unsupported platform: {}", platform),
     }
 }

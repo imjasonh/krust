@@ -58,18 +58,39 @@ async fn main() -> Result<()> {
                 format!("{}/{}:latest", repo, project_name)
             };
 
+            // Initialize registry client early for platform detection
+            let auth = oci_distribution::secrets::RegistryAuth::Anonymous;
+            let mut registry_client = RegistryClient::new(auth)?;
+
             // Determine platforms to build for
             let platforms = if let Some(platforms) = platform {
+                // Use explicitly specified platforms
                 platforms
             } else {
-                // Default to common platforms
-                vec!["linux/amd64".to_string(), "linux/arm64".to_string()]
+                // Detect platforms from base image
+                info!(
+                    "Detecting available platforms from base image: {}",
+                    base_image
+                );
+                match registry_client.get_image_platforms(&base_image).await {
+                    Ok(detected_platforms) => {
+                        if detected_platforms.is_empty() {
+                            info!("No platforms detected, using defaults");
+                            vec!["linux/amd64".to_string(), "linux/arm64".to_string()]
+                        } else {
+                            info!("Detected platforms: {:?}", detected_platforms);
+                            detected_platforms
+                        }
+                    }
+                    Err(e) => {
+                        info!("Failed to detect platforms: {}. Using defaults.", e);
+                        vec!["linux/amd64".to_string(), "linux/arm64".to_string()]
+                    }
+                }
             };
 
             // Build for each platform
             let mut manifest_descriptors = Vec::new();
-            let auth = oci_distribution::secrets::RegistryAuth::Anonymous;
-            let mut registry_client = RegistryClient::new(auth)?;
 
             for platform_str in &platforms {
                 info!("Building for platform: {}", platform_str);

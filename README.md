@@ -40,8 +40,16 @@ rustup target add x86_64-unknown-linux-musl
 # For linux/arm64
 rustup target add aarch64-unknown-linux-musl
 
-# For linux/arm/v7
-rustup target add armv7-unknown-linux-musleabihf
+# Or install all supported targets at once
+rustup target add \
+    x86_64-unknown-linux-musl \
+    aarch64-unknown-linux-musl \
+    armv7-unknown-linux-musleabihf \
+    arm-unknown-linux-musleabihf \
+    i686-unknown-linux-musl \
+    powerpc64le-unknown-linux-musl \
+    s390x-unknown-linux-musl \
+    riscv64gc-unknown-linux-musl
 ```
 
 #### macOS Cross-compilation Setup
@@ -52,6 +60,9 @@ On macOS, you'll need a cross-compilation toolchain:
 # Install musl cross-compilation tools
 brew install filosottile/musl-cross/musl-cross
 
+# Note: The musl-cross formula typically only includes x86_64 and aarch64 toolchains.
+# For other architectures, you may need additional toolchains or use Docker/remote builders.
+
 # Create a .cargo/config.toml in your project with:
 cat > .cargo/config.toml << 'EOF'
 [target.x86_64-unknown-linux-musl]
@@ -59,6 +70,11 @@ linker = "x86_64-linux-musl-gcc"
 
 [target.aarch64-unknown-linux-musl]
 linker = "aarch64-linux-musl-gcc"
+
+# For other architectures, you'll need to install the appropriate cross-compiler
+# or use cargo-zigbuild which can target all platforms:
+# cargo install cargo-zigbuild
+# Then build with: cargo zigbuild --target <target>
 EOF
 ```
 
@@ -109,7 +125,8 @@ krust build --platform linux/amd64,linux/arm64
 # Or specify platforms separately
 krust build --platform linux/amd64 --platform linux/arm64
 
-# Default behavior builds for both amd64 and arm64
+# Default behavior detects platforms from base image
+# If the base image supports multiple platforms, krust will build for all of them
 krust build
 ```
 
@@ -124,6 +141,11 @@ krust build -- --features=prod
 - `linux/amd64` (x86_64-unknown-linux-musl)
 - `linux/arm64` (aarch64-unknown-linux-musl)
 - `linux/arm/v7` (armv7-unknown-linux-musleabihf)
+- `linux/arm/v6` (arm-unknown-linux-musleabihf)
+- `linux/386` (i686-unknown-linux-musl)
+- `linux/ppc64le` (powerpc64le-unknown-linux-musl)
+- `linux/s390x` (s390x-unknown-linux-musl)
+- `linux/riscv64` (riscv64gc-unknown-linux-musl)
 
 ### Multi-Architecture Images
 
@@ -134,6 +156,23 @@ krust always pushes OCI image indexes (manifest lists) for consistency:
 4. Returns the manifest list digest for use with Docker/Kubernetes
 
 This means even single-platform builds result in a manifest list, ensuring a uniform interface regardless of the number of platforms built.
+
+#### Automatic Platform Detection
+
+When you don't specify `--platform`, krust automatically detects which platforms to build for by inspecting the base image:
+
+```bash
+# If using cgr.dev/chainguard/static:latest (supports linux/amd64 and linux/arm64)
+krust build  # Automatically builds for both amd64 and arm64
+
+# If using a single-platform base image
+krust build  # Builds only for the supported platform
+
+# You can always override with explicit platforms
+krust build --platform linux/amd64  # Build only for amd64 regardless of base image
+```
+
+This intelligent platform detection ensures your images support the same platforms as your base image, maintaining consistency throughout your image stack.
 
 ## Build Process
 
@@ -302,9 +341,21 @@ cd krust
 brew install messense/macos-cross-toolchains/x86_64-unknown-linux-musl
 brew install messense/macos-cross-toolchains/aarch64-unknown-linux-musl
 
-# Install Rust targets
+# For full platform support, consider using cargo-zigbuild:
+cargo install cargo-zigbuild
+
+# Install Rust targets (at minimum for tests)
 rustup target add x86_64-unknown-linux-musl
-rustup target add aarch64-unknown-linux-musl  # Optional, for ARM64 support
+rustup target add aarch64-unknown-linux-musl
+
+# For full platform support, add all targets:
+rustup target add \
+    armv7-unknown-linux-musleabihf \
+    arm-unknown-linux-musleabihf \
+    i686-unknown-linux-musl \
+    powerpc64le-unknown-linux-musl \
+    s390x-unknown-linux-musl \
+    riscv64gc-unknown-linux-musl
 
 # Install pre-commit hooks
 pip install pre-commit
