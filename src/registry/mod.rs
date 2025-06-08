@@ -86,20 +86,13 @@ impl RegistryClient {
         let manifest = OciManifest::Image(image_manifest);
 
         debug!("Pushing manifest");
-        let manifest_url = self
+        let (manifest_url, digest) = self
             .client
-            .push_manifest(&reference, &manifest)
+            .push_manifest_and_get_digest(&reference, &manifest)
             .await
             .context("Failed to push manifest")?;
 
         info!("Successfully pushed image to {}", manifest_url);
-
-        // Extract digest from the manifest URL
-        // URL format: https://registry/v2/repo/manifests/sha256:digest
-        let digest = manifest_url
-            .split('/')
-            .next_back()
-            .context("Failed to extract digest from manifest URL")?;
 
         // Build the full image reference with digest
         let registry = reference.registry();
@@ -169,19 +162,13 @@ impl RegistryClient {
                 m.platform.os, m.platform.architecture, m.digest
             );
         }
-        let manifest_url = self
+        let (manifest_url, digest) = self
             .client
-            .push_manifest(&reference, &manifest)
+            .push_manifest_and_get_digest(&reference, &manifest)
             .await
             .context("Failed to push manifest list")?;
 
         info!("Successfully pushed manifest list to {}", manifest_url);
-
-        // Extract digest from the manifest URL
-        let digest = manifest_url
-            .split('/')
-            .next_back()
-            .context("Failed to extract digest from manifest URL")?;
 
         // Build the full image reference with digest
         let registry = reference.registry();
@@ -201,78 +188,55 @@ impl RegistryClient {
             .parse()
             .context("Failed to parse image reference")?;
 
-        debug!("Fetching manifest for {}", reference);
+        debug!("Fetching platforms for {}", reference);
 
-        // Pull the manifest
-        let (manifest, _) = self
+        // Use the new get_image_platforms method from oci-distribution
+        let platforms = self
             .client
-            .pull_manifest(&reference, auth)
+            .get_image_platforms(&reference, auth)
             .await
-            .context("Failed to pull manifest")?;
+            .context("Failed to get image platforms")?;
 
-        // Parse platforms based on manifest type
-        match manifest {
-            OciManifest::Image(_) => {
-                // Single platform image - we need to fetch the config to determine platform
-                debug!("Single platform image detected");
-                // For now, we'll assume it's linux/amd64 if we can't determine
-                // In a real implementation, we'd fetch the config blob
-                Ok(vec!["linux/amd64".to_string()])
-            }
-            OciManifest::ImageIndex(index) => {
-                // Multi-platform image - extract platforms from index
-                debug!(
-                    "Multi-platform image detected with {} manifests",
-                    index.manifests.len()
-                );
-                let mut platforms: Vec<String> = index
-                    .manifests
-                    .iter()
-                    .filter_map(|m| {
-                        m.platform.as_ref().and_then(|p| {
-                            // Filter out invalid platforms
-                            if p.os == "unknown"
-                                || p.architecture == "unknown"
-                                || p.os.is_empty()
-                                || p.architecture.is_empty()
-                            {
-                                return None;
-                            }
+        // Convert (os, arch) tuples to platform strings and normalize
+        let mut platform_strings: Vec<String> = platforms
+            .into_iter()
+            .filter_map(|(os, arch)| {
+                // Filter out unknown/invalid platforms
+                if os == "unknown" || arch == "unknown" || os.is_empty() || arch.is_empty() {
+                    return None;
+                }
 
-                            let mut platform = format!("{}/{}", p.os, p.architecture);
-                            if let Some(variant) = &p.variant {
-                                if !variant.is_empty() {
-                                    platform.push('/');
-                                    platform.push_str(variant);
-                                }
-                            }
-                            // Normalize and filter platforms
-                            let normalized = match platform.as_str() {
-                                "linux/amd64" => Some("linux/amd64".to_string()),
-                                "linux/arm64" | "linux/arm64/v8" => Some("linux/arm64".to_string()),
-                                "linux/arm/v7" => Some("linux/arm/v7".to_string()),
-                                "linux/arm/v6" => Some("linux/arm/v6".to_string()),
-                                "linux/386" => Some("linux/386".to_string()),
-                                "linux/ppc64le" => Some("linux/ppc64le".to_string()),
-                                "linux/s390x" => Some("linux/s390x".to_string()),
-                                "linux/riscv64" => Some("linux/riscv64".to_string()),
-                                _ => {
-                                    debug!("Skipping unsupported platform: {}", platform);
-                                    None
-                                }
-                            };
-                            normalized
-                        })
-                    })
-                    .collect();
+                let platform = format!("{}/{}", os, arch);
 
-                // Deduplicate platforms
-                platforms.sort();
-                platforms.dedup();
+                // Normalize and filter platforms
+                let normalized = match platform.as_str() {
+                    "linux/amd64" => Some("linux/amd64".to_string()),
+                    "linux/arm64" | "linux/arm64/v8" => Some("linux/arm64".to_string()),
+                    "linux/arm/v7" => Some("linux/arm/v7".to_string()),
+                    "linux/arm/v6" => Some("linux/arm/v6".to_string()),
+                    "linux/386" => Some("linux/386".to_string()),
+                    "linux/ppc64le" => Some("linux/ppc64le".to_string()),
+                    "linux/s390x" => Some("linux/s390x".to_string()),
+                    "linux/riscv64" => Some("linux/riscv64".to_string()),
+                    _ => {
+                        debug!("Skipping unsupported platform: {}", platform);
+                        None
+                    }
+                };
+                normalized
+            })
+            .collect();
 
-                info!("Found platforms: {:?}", platforms);
-                Ok(platforms)
-            }
+        // Deduplicate platforms
+        platform_strings.sort();
+        platform_strings.dedup();
+
+        if platform_strings.is_empty() {
+            debug!("No valid platforms found, defaulting to linux/amd64");
+            Ok(vec!["linux/amd64".to_string()])
+        } else {
+            info!("Found platforms: {:?}", platform_strings);
+            Ok(platform_strings)
         }
     }
 }

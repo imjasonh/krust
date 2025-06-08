@@ -83,6 +83,16 @@ impl AuthConfig {
             return RegistryAuth::Anonymous;
         }
 
+        // Check for bearer tokens first
+        if let Some(token) = &self.registry_token {
+            return RegistryAuth::Bearer(token.clone());
+        }
+
+        if let Some(token) = &self.identity_token {
+            return RegistryAuth::Bearer(token.clone());
+        }
+
+        // Then check for basic auth
         if let (Some(username), Some(password)) = (&self.username, &self.password) {
             return RegistryAuth::Basic(username.clone(), password.clone());
         }
@@ -233,5 +243,31 @@ mod unit_tests {
 
         let header = auth.to_authorization_header().unwrap().unwrap();
         assert_eq!(header, "Bearer token123");
+    }
+
+    #[test]
+    fn test_auth_config_to_registry_auth() {
+        use oci_distribution::secrets::RegistryAuth;
+
+        // Test anonymous
+        let auth = AuthConfig::anonymous();
+        assert_eq!(auth.to_registry_auth(), RegistryAuth::Anonymous);
+
+        // Test basic auth
+        let auth = AuthConfig::new("user".to_string(), "pass".to_string());
+        assert_eq!(
+            auth.to_registry_auth(),
+            RegistryAuth::Basic("user".to_string(), "pass".to_string())
+        );
+
+        // Test bearer token
+        let auth = AuthConfig {
+            registry_token: Some("token123".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            auth.to_registry_auth(),
+            RegistryAuth::Bearer("token123".to_string())
+        );
     }
 }
