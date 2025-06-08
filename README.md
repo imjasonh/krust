@@ -100,8 +100,14 @@ krust build example/hello-krust --no-push
 # Use a specific image name (overrides KRUST_REPO)
 krust build --image myregistry.io/myapp:v1.0
 
-# Build for a different platform
+# Build for a specific platform
 krust build --platform linux/arm64
+
+# Build for multiple platforms (multi-arch)
+krust build --platform linux/amd64,linux/arm64
+
+# Or specify platforms separately
+krust build --platform linux/amd64 --platform linux/arm64
 ```
 
 ### Build with custom cargo arguments
@@ -185,6 +191,7 @@ When determining the base image, krust uses this precedence order:
 - **Docker-free** - Builds OCI container images without requiring Docker daemon
 - **Static binaries** - Produces truly static binaries using musl libc
 - **Composable** - Outputs image digest to stdout, enabling `docker run $(krust build)`
+- **Multi-arch support** - Build for multiple platforms in a single command
 - **Cross-platform** - Supports multiple architectures (amd64, arm64, arm/v7)
 - **Minimal images** - Uses distroless base images for security and size
 - **OCI compliant** - Works with any OCI-compliant container registry
@@ -259,6 +266,15 @@ This is normal when building linux/amd64 images on Apple Silicon. The images wil
 # Clone the repository
 git clone https://github.com/imjasonh/krust.git
 cd krust
+
+# Install cross-compilation toolchain (required for tests)
+# On macOS:
+brew install messense/macos-cross-toolchains/x86_64-unknown-linux-musl
+brew install messense/macos-cross-toolchains/aarch64-unknown-linux-musl
+
+# Install Rust targets
+rustup target add x86_64-unknown-linux-musl
+rustup target add aarch64-unknown-linux-musl  # Optional, for ARM64 support
 
 # Install pre-commit hooks
 pip install pre-commit

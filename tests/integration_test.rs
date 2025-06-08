@@ -72,6 +72,8 @@ fn test_build_with_krust_repo_env() -> Result<()> {
     let mut cmd = Command::cargo_bin("krust")?;
     cmd.arg("build")
         .arg("--no-push")
+        .arg("--platform")
+        .arg("linux/amd64")
         .arg(".") // Explicitly pass current directory
         .env("KRUST_REPO", "test.local")
         .current_dir(&example_dir);
@@ -80,7 +82,7 @@ fn test_build_with_krust_repo_env() -> Result<()> {
         .success()
         .stderr(predicate::str::contains("Building Rust project"))
         .stderr(predicate::str::contains(
-            "Successfully built image: test.local/hello-krust:latest",
+            "Successfully built image for 1 platform(s)",
         ));
     Ok(())
 }
@@ -95,6 +97,8 @@ fn test_command_substitution_syntax() -> Result<()> {
     let output = cmd
         .arg("build")
         .arg("--no-push")
+        .arg("--platform")
+        .arg("linux/amd64")
         .arg("--image")
         .arg("test.local/hello:latest")
         .arg(".") // Explicitly pass current directory
@@ -123,6 +127,8 @@ fn test_verbose_logging() -> Result<()> {
     cmd.arg("--verbose")
         .arg("build")
         .arg("--no-push")
+        .arg("--platform")
+        .arg("linux/amd64")
         .arg("--image")
         .arg("test.local/hello:latest")
         .arg(".") // Explicitly pass current directory
@@ -155,6 +161,8 @@ fn test_full_build_and_run_workflow() -> Result<()> {
     let mut cmd = Command::cargo_bin("krust")?;
     let output = cmd
         .arg("build")
+        .arg("--platform")
+        .arg("linux/amd64")
         .arg(".") // Explicitly pass current directory
         .env("KRUST_REPO", "ttl.sh/krust-test")
         .current_dir(&example_dir)
@@ -174,5 +182,80 @@ fn test_full_build_and_run_workflow() -> Result<()> {
     assert!(docker_output.status.success(), "Docker run failed");
     let docker_stdout = String::from_utf8_lossy(&docker_output.stdout);
     assert!(docker_stdout.contains("Hello from krust example!"));
+    Ok(())
+}
+
+#[test]
+fn test_single_platform_build() -> Result<()> {
+    let example_dir = env::current_dir()?.join("example").join("hello-krust");
+
+    let mut cmd = Command::cargo_bin("krust")?;
+    cmd.arg("build")
+        .arg("--no-push")
+        .arg("--platform")
+        .arg("linux/amd64")
+        .arg("--image")
+        .arg("test.local/single-platform:latest")
+        .arg(".")
+        .current_dir(&example_dir);
+
+    cmd.assert().success().stderr(predicate::str::contains(
+        "Building for platform: linux/amd64",
+    ));
+    Ok(())
+}
+
+#[test]
+fn test_multi_platform_build() -> Result<()> {
+    // Check if we have the ARM64 target installed
+    let has_arm64_target = StdCommand::new("rustup")
+        .args(&["target", "list", "--installed"])
+        .output()
+        .map(|output| {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            stdout.contains("aarch64-unknown-linux-musl")
+        })
+        .unwrap_or(false);
+
+    let example_dir = env::current_dir()?.join("example").join("hello-krust");
+
+    let mut cmd = Command::cargo_bin("krust")?;
+
+    if has_arm64_target {
+        // Test with both platforms if ARM64 is available
+        cmd.arg("build")
+            .arg("--no-push")
+            .arg("--platform")
+            .arg("linux/amd64,linux/arm64")
+            .arg("--image")
+            .arg("test.local/multi-platform:latest")
+            .arg(".")
+            .current_dir(&example_dir);
+
+        cmd.assert()
+            .success()
+            .stderr(predicate::str::contains(
+                "Building for platform: linux/amd64",
+            ))
+            .stderr(predicate::str::contains(
+                "Building for platform: linux/arm64",
+            ));
+    } else {
+        // Test with multiple x64 platforms (same platform twice to test the multi-platform flow)
+        cmd.arg("build")
+            .arg("--no-push")
+            .arg("--platform")
+            .arg("linux/amd64")
+            .arg("--platform")
+            .arg("linux/amd64")
+            .arg("--image")
+            .arg("test.local/multi-platform:latest")
+            .arg(".")
+            .current_dir(&example_dir);
+
+        cmd.assert().success().stderr(predicate::str::contains(
+            "Building for platform: linux/amd64",
+        ));
+    }
     Ok(())
 }

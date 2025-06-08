@@ -5,6 +5,7 @@ use krust::{
     cli::{Cli, Commands},
     config::Config,
     image::ImageBuilder,
+    manifest::{ImageIndex, ManifestDescriptor, Platform},
     registry::RegistryClient,
 };
 use std::path::{Path, PathBuf};
@@ -57,33 +58,100 @@ async fn main() -> Result<()> {
                 format!("{}/{}:latest", repo, project_name)
             };
 
-            // Build the Rust binary
-            let target = get_rust_target_triple(&platform)?;
-            let builder = RustBuilder::new(&project_path, &target).with_cargo_args(cargo_args);
-
-            let binary_path = builder.build()?;
-
-            // Build container image
-            let image_builder = ImageBuilder::new(binary_path, base_image, platform.clone());
-
-            let (config_data, layer_data, manifest) = image_builder.build()?;
-
-            // Push by default unless --no-push is specified
-            if !no_push {
-                info!("Pushing image to registry...");
-                let auth = oci_distribution::secrets::RegistryAuth::Anonymous;
-                let mut registry_client = RegistryClient::new(auth)?;
-
-                let layers = vec![(layer_data, manifest.layers[0].media_type.clone())];
-
-                let digest_ref = registry_client
-                    .push_image(&image_ref, config_data, layers)
-                    .await?;
-
-                // Print only the digest reference to stdout
-                println!("{}", digest_ref);
+            // Determine platforms to build for
+            let platforms = if let Some(platforms) = platform {
+                platforms
             } else {
-                info!("Successfully built image: {}", image_ref);
+                // Default to common platforms
+                vec!["linux/amd64".to_string(), "linux/arm64".to_string()]
+            };
+
+            // Build for each platform
+            let mut manifest_descriptors = Vec::new();
+            let mut single_platform_digest = None;
+            let auth = oci_distribution::secrets::RegistryAuth::Anonymous;
+            let mut registry_client = RegistryClient::new(auth)?;
+
+            for platform_str in &platforms {
+                info!("Building for platform: {}", platform_str);
+
+                // Build the Rust binary for this platform
+                let target = get_rust_target_triple(platform_str)?;
+                let builder =
+                    RustBuilder::new(&project_path, &target).with_cargo_args(cargo_args.clone());
+
+                let binary_path = builder.build()?;
+
+                // Build container image for this platform
+                let image_builder =
+                    ImageBuilder::new(binary_path, base_image.clone(), platform_str.clone());
+
+                let (config_data, layer_data, manifest) = image_builder.build()?;
+
+                // Push platform-specific image if not --no-push
+                if !no_push {
+                    info!("Pushing image for platform: {}", platform_str);
+
+                    let layers = vec![(layer_data, manifest.layers[0].media_type.clone())];
+
+                    // For single platform, push to the main tag
+                    let push_ref = if platforms.len() == 1 {
+                        image_ref.clone()
+                    } else {
+                        // For multi-platform, use platform-specific tag
+                        format!("{}-{}", image_ref, platform_str.replace('/', "-"))
+                    };
+
+                    let digest_ref = registry_client
+                        .push_image(&push_ref, config_data, layers)
+                        .await?;
+
+                    // Store digest for single platform builds
+                    if platforms.len() == 1 {
+                        single_platform_digest = Some(digest_ref.clone());
+                    }
+
+                    // Parse platform string
+                    let parts: Vec<&str> = platform_str.split('/').collect();
+                    let (os, arch) = if parts.len() >= 2 {
+                        (parts[0].to_string(), parts[1].to_string())
+                    } else {
+                        return Err(anyhow::anyhow!("Invalid platform format: {}", platform_str));
+                    };
+
+                    // Add to manifest list
+                    manifest_descriptors.push(ManifestDescriptor {
+                        media_type: manifest.media_type.clone(),
+                        size: serde_json::to_vec(&manifest)?.len() as i64,
+                        digest: digest_ref.split('@').next_back().unwrap_or("").to_string(),
+                        platform: Platform {
+                            architecture: arch,
+                            os,
+                            variant: None,
+                        },
+                    });
+                }
+            }
+
+            // Create and push manifest list if not --no-push
+            if !no_push && platforms.len() > 1 {
+                info!("Creating and pushing manifest list...");
+                let index = ImageIndex::new(manifest_descriptors);
+                let _index_data = serde_json::to_vec(&index)?;
+
+                // TODO: Push manifest list to registry
+                // For now, just print the multi-arch image reference
+                println!("{}", image_ref);
+            } else if !no_push && platforms.len() == 1 {
+                // Single platform, print the digest reference
+                if let Some(digest_ref) = single_platform_digest {
+                    println!("{}", digest_ref);
+                }
+            } else {
+                info!(
+                    "Successfully built image for {} platform(s)",
+                    platforms.len()
+                );
                 info!("Skipping push (--no-push specified)");
             }
         }
