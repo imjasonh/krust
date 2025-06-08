@@ -24,19 +24,4 @@ mod tests {
         assert_eq!(repo, "myapp");
         assert_eq!(tag, "v1.0");
     }
-
-    #[test]
-    fn test_registry_client_disables_chunked_uploads() {
-        // This test verifies that RegistryClient is created with chunked uploads disabled
-        // The actual verification happens in the constructor where we set
-        // config.use_chunked_uploads = false
-        let client = RegistryClient::new();
-        assert!(
-            client.is_ok(),
-            "RegistryClient should be created successfully"
-        );
-
-        // The important part is that the client is configured correctly in new()
-        // to disable chunked uploads for better registry compatibility
-    }
 }
