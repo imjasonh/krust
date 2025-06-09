@@ -47,7 +47,7 @@ jobs:
     - run: make build
     - run: make test
     - run: make test-e2e
-    #- run: make run-built-image
+    - run: make run-built-image
 
   fmt:
     name: Rustfmt
