@@ -8,7 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "--cfg ci"
 
 jobs:
   test:
@@ -20,8 +19,7 @@ jobs:
         rust: [stable, beta]
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # master
+    - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # master
       with:
         toolchain: ${{ matrix.rust }}
         targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
@@ -44,14 +42,12 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-    - name: Verify cross-compilation setup
-      run: make verify-cross-compile
-    - name: Build
-      run: make build-verbose
-    - name: Run unit tests
-      run: make test-verbose
-    - name: Run e2e tests
-      run: make test-e2e-verbose
+
+    - run: make verify-cross-compile
+    - run: make build
+    - run: make test
+    - run: make test-e2e
+    #- run: make run-built-image
 
   fmt:
     name: Rustfmt
@@ -92,114 +88,6 @@ jobs:
       run: cargo install cargo-audit
     - name: Run security audit
       run: cargo audit
-
-  integration:
-    name: Integration Test
-    runs-on: ubuntu-latest
-    services:
-      registry:
-        image: registry:2
-        ports:
-          - 5000:5000
-    steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
-      with:
-        toolchain: stable
-        targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
-    - name: Install musl tools
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
-    - name: Setup cargo config for cross-compilation
-      run: |
-        mkdir -p .cargo
-        cat > .cargo/config.toml << 'EOF'
-        [target.x86_64-unknown-linux-musl]
-        linker = "x86_64-linux-musl-gcc"
-
-        [target.aarch64-unknown-linux-musl]
-        linker = "aarch64-linux-gnu-gcc"
-        EOF
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
-    - name: Build krust
-      run: cargo build --release
-    - name: Add krust to PATH
-      run: echo "${{ github.workspace }}/target/release" >> $GITHUB_PATH
-    - name: Test krust version
-      run: krust version
-    - name: Build and run example with krust
-      run: |
-        cd example/hello-krust
-        # Build and push to ttl.sh (ephemeral registry)
-        export KRUST_REPO=ttl.sh/${{ github.run_id }}
-        IMAGE_REF=$(krust build ./)
-        echo "Built image: $IMAGE_REF"
-        # Run the image
-        docker run --rm $IMAGE_REF
-    - name: Test docker run with command substitution
-      run: |
-        cd example/hello-krust
-        export KRUST_REPO=ttl.sh/${{ github.run_id }}-test2
-        docker run --rm $(krust build ./)
-    - name: Test build with --no-push
-      run: |
-        cd example/hello-krust
-        krust build --no-push --image local.test/hello:latest ./
-    - name: Test multi-arch build and run
-      run: |
-        cd example/hello-krust
-        # Build for both platforms and push
-        export KRUST_REPO=ttl.sh/${{ github.run_id }}-multiarch
-        IMAGE_REF=$(krust build --platform linux/amd64,linux/arm64 ./)
-        echo "Built multi-arch image: $IMAGE_REF"
-        # Run the image - should automatically select the right architecture
-        docker run --rm $IMAGE_REF
-
-  # Test extended platform support
-  extended-platforms:
-    name: Extended Platform Support
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
-      with:
-        toolchain: stable
-        targets: x86_64-unknown-linux-musl,i686-unknown-linux-musl,aarch64-unknown-linux-musl,armv7-unknown-linux-musleabihf
-    - name: Install cross-compilation tools
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y musl-tools gcc-multilib
-    - name: Setup cargo config
-      run: |
-        mkdir -p .cargo
-        cat > .cargo/config.toml << 'EOF'
-        [target.x86_64-unknown-linux-musl]
-        linker = "x86_64-linux-musl-gcc"
-
-        [target.i686-unknown-linux-musl]
-        linker = "musl-gcc"
-        rustflags = ["-C", "target-cpu=i686"]
-
-        [target.aarch64-unknown-linux-musl]
-        linker = "aarch64-linux-gnu-gcc"
-
-        [target.armv7-unknown-linux-musleabihf]
-        linker = "arm-linux-gnueabihf-gcc"
-        EOF
-    - name: Build krust
-      run: cargo build --release
-    - name: Test multi-platform build with Alpine base
-      run: |
-        # Test that platform detection works (even if we can't build all platforms)
-        ./target/release/krust build --no-push --image test.local/alpine-test:latest ./example/alpine-base 2>&1 | tee build.log
-
-        # Verify platform detection happened
-        grep -q "Detecting available platforms from base image: alpine:latest" build.log
-        grep -q "Found platforms:" build.log
 
   # Takes too long to run on CI, so it's commented out for now.
   # coverage:

@@ -5,10 +5,6 @@ TEST_FLAGS := -- --test-threads=1
 
 # Build the project
 build:
-	cargo build
-
-# Build verbosely
-build-verbose:
 	cargo build --verbose
 
 # Setup cargo config for cross-compilation
@@ -16,7 +12,7 @@ setup-cross-compile:
 	@mkdir -p .cargo
 	@cat > .cargo/config.toml <<'EOF'
 	[target.x86_64-unknown-linux-musl]
-	linker = "x86_64-linux-musl-gcc"
+	linker = "musl-gcc"
 
 	[target.aarch64-unknown-linux-musl]
 	linker = "aarch64-linux-gnu-gcc"
@@ -56,21 +52,13 @@ run:
 # Run all tests
 test: test-unit test-e2e
 
-# Run all tests verbosely (for CI)
-test-verbose:
-	cargo test --verbose $(TEST_FLAGS)
-
 # Run unit tests only
 test-unit:
-	cargo test --lib --bins $(TEST_FLAGS)
+	cargo test --verbose --lib --bins $(TEST_FLAGS)
 
 # Run e2e tests only
 test-e2e:
-	cargo test --test '*' $(TEST_FLAGS)
-
-# Run e2e tests verbosely (for CI)
-test-e2e-verbose:
-	cargo test --test '*' --verbose $(TEST_FLAGS)
+	cargo test --verbose --test '*' $(TEST_FLAGS)
 
 # Clean build artifacts
 clean:
@@ -94,3 +82,16 @@ check-code:
 
 # Run all checks (format, lint, test)
 check: check-fmt lint test
+
+push-ttl:
+	@echo "Pushing to ttl.sh..."
+	KRUST_REPO=ttl.sh/jason cargo run build ./example/hello-krust
+
+push-gar:
+	@echo "Pushing to gar.sh..."
+	KRUST_REPO=us-central1-docker.pkg.dev/jason-chainguard/krust cargo run build ./example/hello-krust
+
+run-built-image:
+	@image=$$(KRUST_REPO=ttl.sh/jason cargo run build ./example/hello-krust) && \
+	echo "Running image: $$image" && \
+	docker run --rm $$image
