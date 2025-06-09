@@ -43,11 +43,25 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
+    - name: Setup cargo config for CI cross-compilation
+      run: |
+        mkdir -p .cargo
+        cat > .cargo/config.toml << 'EOF'
+        [target.x86_64-unknown-linux-musl]
+        linker = "musl-gcc"
+
+        [target.aarch64-unknown-linux-musl]
+        linker = "aarch64-linux-gnu-gcc"
+        EOF
+
     - run: make verify-cross-compile
     - run: make build
     - run: make test
     - run: make test-e2e
-    #- run: make run-built-image
+    # Only run cross-compilation integration test on x86_64 runners
+    - name: Run integration test (cross-compilation)
+      if: matrix.os == 'ubuntu-latest'
+      run: make run-built-image
 
   fmt:
     name: Rustfmt
