@@ -44,9 +44,9 @@ jobs:
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
     - run: make verify-cross-compile
-    - run: make build-verbose
-    - run: make test-verbose
-    - run: make test-e2e-verbose
+    - run: make build
+    - run: make test
+    - run: make test-e2e
     - run: make run-built-image
 
   fmt:

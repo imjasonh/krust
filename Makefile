@@ -5,10 +5,6 @@ TEST_FLAGS := -- --test-threads=1
 
 # Build the project
 build:
-	cargo build
-
-# Build verbosely
-build-verbose:
 	cargo build --verbose
 
 # Setup cargo config for cross-compilation
@@ -56,21 +52,13 @@ run:
 # Run all tests
 test: test-unit test-e2e
 
-# Run all tests verbosely (for CI)
-test-verbose:
-	cargo test --verbose $(TEST_FLAGS)
-
 # Run unit tests only
 test-unit:
-	cargo test --lib --bins $(TEST_FLAGS)
+	cargo test --verbose --lib --bins $(TEST_FLAGS)
 
 # Run e2e tests only
 test-e2e:
-	cargo test --test '*' $(TEST_FLAGS)
-
-# Run e2e tests verbosely (for CI)
-test-e2e-verbose:
-	cargo test --test '*' --verbose $(TEST_FLAGS)
+	cargo test --verbose --test '*' $(TEST_FLAGS)
 
 # Clean build artifacts
 clean:
