@@ -120,20 +120,40 @@ async fn main() -> Result<()> {
                     platform_str.clone(),
                 );
 
-                let (config_data, layer_data, manifest) = image_builder.build()?;
+                // Always use layered approach - registry layer will handle cross-registry blob copying
+                let base_auth = resolve_auth(&base_image)?;
+                let (config_data, layer_data, manifest) = image_builder
+                    .build(&mut registry_client, &base_auth)
+                    .await?;
 
                 // Push platform-specific image if not --no-push
                 if !no_push {
                     info!("Pushing image for platform: {}", platform_str);
 
-                    let layers = vec![(layer_data, manifest.layers[0].media_type.clone())];
-
                     // Get auth for the target registry
                     let push_auth = resolve_auth(&target_repo)?;
 
-                    // Push platform image by digest only (no tags)
+                    // Get the media type of the application layer (last layer in manifest)
+                    let app_layer_media_type = manifest
+                        .layers
+                        .last()
+                        .map(|l| l.media_type.clone())
+                        .unwrap_or_else(|| {
+                            "application/vnd.docker.image.rootfs.diff.tar.gzip".to_string()
+                        });
+
+                    // Push layered image (copy base layers if needed + push app layer + manifest)
                     let (digest_ref, manifest_size) = registry_client
-                        .push_image_by_digest(&target_repo, config_data, layers, &push_auth)
+                        .push_layered_image(
+                            &target_repo,
+                            config_data,
+                            layer_data,
+                            app_layer_media_type,
+                            &manifest,
+                            &push_auth,
+                            &base_image,
+                            &base_auth,
+                        )
                         .await?;
 
                     // Parse platform string
