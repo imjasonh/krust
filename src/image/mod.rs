@@ -1,7 +1,7 @@
+use crate::registry::RegistryAuth;
 use anyhow::{Context, Result};
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use oci_distribution::secrets::RegistryAuth;
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 use std::fs::File;
