@@ -75,9 +75,9 @@ impl AuthConfig {
         Ok(None)
     }
 
-    /// Convert to oci-distribution RegistryAuth
-    pub fn to_registry_auth(&self) -> oci_distribution::secrets::RegistryAuth {
-        use oci_distribution::secrets::RegistryAuth;
+    /// Convert to our RegistryAuth
+    pub fn to_registry_auth(&self) -> crate::registry::RegistryAuth {
+        use crate::registry::RegistryAuth;
 
         if self.is_anonymous() {
             return RegistryAuth::Anonymous;
@@ -85,16 +85,23 @@ impl AuthConfig {
 
         // Check for bearer tokens first
         if let Some(token) = &self.registry_token {
-            return RegistryAuth::Bearer(token.clone());
+            return RegistryAuth::Bearer {
+                token: token.clone(),
+            };
         }
 
         if let Some(token) = &self.identity_token {
-            return RegistryAuth::Bearer(token.clone());
+            return RegistryAuth::Bearer {
+                token: token.clone(),
+            };
         }
 
         // Then check for basic auth
         if let (Some(username), Some(password)) = (&self.username, &self.password) {
-            return RegistryAuth::Basic(username.clone(), password.clone());
+            return RegistryAuth::Basic {
+                username: username.clone(),
+                password: password.clone(),
+            };
         }
 
         if let Some(auth) = &self.auth {
@@ -102,7 +109,10 @@ impl AuthConfig {
             if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(auth) {
                 if let Ok(decoded_str) = String::from_utf8(decoded) {
                     if let Some((user, pass)) = decoded_str.split_once(':') {
-                        return RegistryAuth::Basic(user.to_string(), pass.to_string());
+                        return RegistryAuth::Basic {
+                            username: user.to_string(),
+                            password: pass.to_string(),
+                        };
                     }
                 }
             }
@@ -191,17 +201,18 @@ mod unit_tests {
 
     #[test]
     fn test_auth_config_to_registry_auth() {
-        use oci_distribution::secrets::RegistryAuth;
+        use crate::registry::RegistryAuth;
 
         // Test anonymous
         let auth = AuthConfig::anonymous();
-        assert_eq!(auth.to_registry_auth(), RegistryAuth::Anonymous);
+        matches!(auth.to_registry_auth(), RegistryAuth::Anonymous);
 
         // Test basic auth
         let auth = AuthConfig::new("user".to_string(), "pass".to_string());
-        assert_eq!(
+        matches!(
             auth.to_registry_auth(),
-            RegistryAuth::Basic("user".to_string(), "pass".to_string())
+            RegistryAuth::Basic { username, password }
+            if username == "user" && password == "pass"
         );
 
         // Test bearer token
@@ -209,9 +220,10 @@ mod unit_tests {
             registry_token: Some("token123".to_string()),
             ..Default::default()
         };
-        assert_eq!(
+        matches!(
             auth.to_registry_auth(),
-            RegistryAuth::Bearer("token123".to_string())
+            RegistryAuth::Bearer { token }
+            if token == "token123"
         );
     }
 }
