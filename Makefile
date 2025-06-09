@@ -12,7 +12,7 @@ setup-cross-compile:
 	@mkdir -p .cargo
 	@cat > .cargo/config.toml <<'EOF'
 	[target.x86_64-unknown-linux-musl]
-	linker = "x86_64-linux-musl-gcc"
+	linker = "musl-gcc"
 
 	[target.aarch64-unknown-linux-musl]
 	linker = "aarch64-linux-gnu-gcc"
