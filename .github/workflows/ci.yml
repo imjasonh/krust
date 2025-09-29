@@ -28,17 +28,17 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
     - name: Cache cargo registry
-      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: ~/.cargo/registry
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo index
-      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: ~/.cargo/git
         key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo build
-      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
