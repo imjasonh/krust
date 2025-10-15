@@ -9,6 +9,19 @@ use std::io::Write;
 use tar::Builder;
 use tracing::{debug, info};
 
+/// Get the timestamp to use for reproducible builds.
+/// Respects SOURCE_DATE_EPOCH environment variable if set.
+fn get_build_timestamp() -> String {
+    if let Ok(epoch) = std::env::var("SOURCE_DATE_EPOCH") {
+        if let Ok(timestamp) = epoch.parse::<i64>() {
+            if let Some(dt) = chrono::DateTime::from_timestamp(timestamp, 0) {
+                return dt.to_rfc3339();
+            }
+        }
+    }
+    chrono::Utc::now().to_rfc3339()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageConfig {
     pub architecture: String,
@@ -220,7 +233,7 @@ impl ImageBuilder {
         // Combine history (base history + app history)
         let mut merged_history = base_config.history.clone();
         merged_history.push(History {
-            created: chrono::Utc::now().to_rfc3339(),
+            created: get_build_timestamp(),
             created_by: "krust".to_string(),
             comment: "Built with krust".to_string(),
             empty_layer: false,
@@ -423,6 +436,45 @@ mod tests {
         assert_eq!(parsed.config.user, "nonroot:nonroot");
         assert_eq!(parsed.rootfs.diff_ids.len(), 1);
         assert_eq!(parsed.history.len(), 0); // Default empty for missing field
+    }
+
+    #[test]
+    fn test_get_build_timestamp_respects_source_date_epoch() {
+        // Set SOURCE_DATE_EPOCH
+        std::env::set_var("SOURCE_DATE_EPOCH", "1609459200");
+
+        let timestamp = super::get_build_timestamp();
+
+        // Should be 2021-01-01T00:00:00+00:00
+        assert!(timestamp.starts_with("2021-01-01T00:00:00"));
+
+        // Clean up
+        std::env::remove_var("SOURCE_DATE_EPOCH");
+    }
+
+    #[test]
+    fn test_get_build_timestamp_without_source_date_epoch() {
+        // Make sure SOURCE_DATE_EPOCH is not set
+        std::env::remove_var("SOURCE_DATE_EPOCH");
+
+        let timestamp = super::get_build_timestamp();
+
+        // Should be a valid RFC3339 timestamp
+        assert!(chrono::DateTime::parse_from_rfc3339(&timestamp).is_ok());
+    }
+
+    #[test]
+    fn test_get_build_timestamp_invalid_epoch() {
+        // Set invalid SOURCE_DATE_EPOCH
+        std::env::set_var("SOURCE_DATE_EPOCH", "not-a-number");
+
+        let timestamp = super::get_build_timestamp();
+
+        // Should fall back to current time
+        assert!(chrono::DateTime::parse_from_rfc3339(&timestamp).is_ok());
+
+        // Clean up
+        std::env::remove_var("SOURCE_DATE_EPOCH");
     }
 
     #[test]
