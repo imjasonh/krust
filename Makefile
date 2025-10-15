@@ -98,13 +98,9 @@ check: check-fmt lint test
 
 push-ttl:
 	@echo "Pushing to ttl.sh..."
-	KRUST_REPO=ttl.sh/jason cargo run build ./example/hello-krust
-
-push-gar:
-	@echo "Pushing to gar.sh..."
-	KRUST_REPO=us-central1-docker.pkg.dev/jason-chainguard/krust cargo run build ./example/hello-krust
+	KRUST_REPO=ttl.sh/krust cargo run build ./example/hello-krust
 
 run-built-image:
-	@image=$$(KRUST_REPO=ttl.sh/jason cargo run build ./example/hello-krust) && \
+	@image=$$(KRUST_REPO=ttl.sh/krust cargo run build ./example/hello-krust) && \
 	echo "Running image: $$image" && \
 	docker run --rm $$image

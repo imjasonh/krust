@@ -19,7 +19,7 @@ krust builds container images for Rust applications without requiring Docker. It
 cargo install --path .
 
 # Set up your repository
-export KRUST_REPO=ttl.sh/$USER
+export KRUST_REPO=<repository-to-push-to>
 
 # Build and run your Rust app as a container
 docker run $(krust build)
@@ -90,7 +90,7 @@ krust outputs the pushed image reference by digest to stdout, with all other out
 
 ```bash
 # Set your repository prefix
-export KRUST_REPO=ttl.sh/jason
+export KRUST_REPO=<repository-to-push-to>
 
 # Build and push (default behavior)
 krust build
@@ -214,8 +214,7 @@ The tradeoff is that musl has slightly different behavior than glibc in some edg
 
 ## Environment Variables
 
-- `KRUST_REPO` - Default repository prefix for built images (e.g., `ttl.sh/username`)
-- `KRUST_IMAGE` - Override the full image reference for a build
+- `KRUST_REPO` - Default repository prefix for built images
 
 ## Configuration
 
@@ -311,8 +310,8 @@ Example Docker config with various auth methods:
 Build and run the example application:
 
 ```bash
-# Set your repository (ttl.sh provides temporary anonymous storage)
-export KRUST_REPO=ttl.sh/jason
+# Set your repository
+export KRUST_REPO=<repository-to-push-to>
 
 # Build and push the example (default behavior)
 krust build example/hello-krust
@@ -321,14 +320,11 @@ krust build example/hello-krust
 krust build example/hello-krust --no-push
 
 # Build, push, and run the example
-docker run $(krust build example/hello-krust)
+docker run --rm $(krust build example/hello-krust)
 
-# Or specify a custom image name with TTL (time-to-live)
-# Images on ttl.sh expire based on the tag: 1h, 2d, 1w, etc.
-krust build example/hello-krust --image ttl.sh/jason/hello:1h
+# Specify a tag to apply to the image
+krust build example/hello-krust --tag v1.2.3
 ```
-
-Note: [ttl.sh](https://ttl.sh) is a free, temporary container registry perfect for testing. Images are automatically deleted after their TTL expires.
 
 ## CLI Reference
 
@@ -373,7 +369,7 @@ Options:
 
 ```bash
 # Resolve a single file
-export KRUST_REPO=ttl.sh/myuser
+export KRUST_REPO=<repository-to-push-to>
 krust resolve -f deployment.yaml > resolved.yaml
 
 # Resolve multiple files
@@ -410,7 +406,7 @@ The `resolve` command will:
 1. Find all `krust://` references (deduplicates automatically)
 2. Build each unique project once
 3. Push images to the registry
-4. Replace references with concrete digests (e.g., `ttl.sh/user/app@sha256:...`)
+4. Replace references with concrete digests (i.e., `@sha256:...`)
 5. Output resolved YAML to stdout
 
 **Note**: Multiple references to the same path are deduplicated - the image is built only once and all references are updated with the same digest.
@@ -437,7 +433,7 @@ Options:
 
 ```bash
 # Build and deploy in one command
-export KRUST_REPO=ttl.sh/myuser
+export KRUST_REPO=<repository-to-push-to>
 krust apply -f deployment.yaml
 
 # Apply entire directory
