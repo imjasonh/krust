@@ -86,7 +86,7 @@ Note: krust builds fully static binaries by default using musl libc, ensuring ma
 
 krust outputs the pushed image reference by digest to stdout, with all other output going to stderr. This enables composability with other tools.
 
-### Build a project in the current directory
+### Build a project
 
 ```bash
 # Set your repository prefix
@@ -100,36 +100,12 @@ krust build --no-push
 
 # Build, push, and run immediately
 docker run $(krust build)
-```
 
-### Build a specific directory
-
-```bash
 # Build and push a specific project
 krust build path/to/rust/project
 
 # Build without pushing
 krust build example/hello-krust --no-push
-```
-
-### Override the image name
-
-```bash
-# Use a specific image name (overrides KRUST_REPO)
-krust build --image myregistry.io/myapp:v1.0
-
-# Build for a specific platform
-krust build --platform linux/arm64
-
-# Build for multiple platforms (multi-arch)
-krust build --platform linux/amd64,linux/arm64
-
-# Or specify platforms separately
-krust build --platform linux/amd64 --platform linux/arm64
-
-# Default behavior detects platforms from base image
-# If the base image supports multiple platforms, krust will build for all of them
-krust build
 ```
 
 ### Build with custom cargo arguments
