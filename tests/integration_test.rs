@@ -123,3 +123,74 @@ fn test_multi_arch_build_and_run() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_reproducible_builds() -> Result<()> {
+    // This test verifies that building the same project twice with SOURCE_DATE_EPOCH
+    // produces identical image digests
+
+    // Get the example project directory
+    let example_dir = env::current_dir()?.join("example").join("hello-krust");
+
+    let native_platform = if cfg!(target_arch = "aarch64") {
+        "linux/arm64"
+    } else {
+        "linux/amd64"
+    };
+
+    // Fixed timestamp for reproducibility
+    let source_date_epoch = "1609459200"; // 2021-01-01 00:00:00 UTC
+
+    // Build the first time (pushing to ttl.sh for temporary storage)
+    let mut cmd1 = Command::cargo_bin("krust")?;
+    let output1 = cmd1
+        .arg("build")
+        .arg("--platform")
+        .arg(native_platform)
+        .arg(".")
+        .env("KRUST_REPO", "ttl.sh/krust-reproducible-test")
+        .env("SOURCE_DATE_EPOCH", source_date_epoch)
+        .current_dir(&example_dir)
+        .output()?;
+
+    if !output1.status.success() {
+        let stderr = String::from_utf8_lossy(&output1.stderr);
+        panic!("First build failed: {}", stderr);
+    }
+
+    let digest1 = String::from_utf8_lossy(&output1.stdout).trim().to_string();
+
+    // Build the second time with the same SOURCE_DATE_EPOCH
+    let mut cmd2 = Command::cargo_bin("krust")?;
+    let output2 = cmd2
+        .arg("build")
+        .arg("--platform")
+        .arg(native_platform)
+        .arg(".")
+        .env("KRUST_REPO", "ttl.sh/krust-reproducible-test")
+        .env("SOURCE_DATE_EPOCH", source_date_epoch)
+        .current_dir(&example_dir)
+        .output()?;
+
+    if !output2.status.success() {
+        let stderr = String::from_utf8_lossy(&output2.stderr);
+        panic!("Second build failed: {}", stderr);
+    }
+
+    let digest2 = String::from_utf8_lossy(&output2.stdout).trim().to_string();
+
+    // The digests should be identical
+    assert_eq!(
+        digest1, digest2,
+        "Builds with same SOURCE_DATE_EPOCH should produce identical digests.\nFirst: {}\nSecond: {}",
+        digest1, digest2
+    );
+
+    // Both should contain a valid digest
+    assert!(
+        digest1.contains("@sha256:"),
+        "Output should contain a digest"
+    );
+
+    Ok(())
+}
