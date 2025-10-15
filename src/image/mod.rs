@@ -475,5 +475,93 @@ mod tests {
 
         // Clean up
         std::env::remove_var("SOURCE_DATE_EPOCH");
+    fn test_parse_platform_invalid_format() {
+        let builder = ImageBuilder::new(
+            PathBuf::from("/tmp/test"),
+            "test-base".to_string(),
+            "linux-amd64".to_string(), // Wrong format
+        );
+
+        let result = builder.parse_platform();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid platform"));
+    }
+
+    #[test]
+    fn test_create_layer_with_valid_binary() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(b"test binary content").unwrap();
+        temp_file.flush().unwrap();
+
+        let builder = ImageBuilder::new(
+            temp_file.path().to_path_buf(),
+            "test-base".to_string(),
+            "linux/amd64".to_string(),
+        );
+
+        let result = builder.create_layer();
+        assert!(result.is_ok());
+
+        let (compressed_data, diff_id) = result.unwrap();
+        assert!(!compressed_data.is_empty());
+        assert!(diff_id.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn test_create_layer_with_nonexistent_binary() {
+        let builder = ImageBuilder::new(
+            PathBuf::from("/nonexistent/binary"),
+            "test-base".to_string(),
+            "linux/amd64".to_string(),
+        );
+
+        let result = builder.create_layer();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_layered_config_adds_path_if_missing() {
+        let binary_path = create_test_binary();
+        let builder = ImageBuilder::new(
+            binary_path,
+            "test-base".to_string(),
+            "linux/amd64".to_string(),
+        );
+
+        let mut base_config = create_base_image_config();
+        base_config.config.env = vec![]; // No PATH
+
+        let app_diff_id = "sha256:app_layer_diff_id";
+
+        let result = builder
+            .create_layered_config(&base_config, app_diff_id)
+            .unwrap();
+
+        // Should add PATH since it was missing
+        assert!(result.config.env.iter().any(|env| env.starts_with("PATH=")));
+    }
+
+    #[test]
+    fn test_create_layered_config_sets_cmd() {
+        let binary_path = create_test_binary();
+        let builder = ImageBuilder::new(
+            binary_path.clone(),
+            "test-base".to_string(),
+            "linux/amd64".to_string(),
+        );
+
+        let base_config = create_base_image_config();
+        let app_diff_id = "sha256:app_layer_diff_id";
+
+        let result = builder
+            .create_layered_config(&base_config, app_diff_id)
+            .unwrap();
+
+        // Should set CMD to the binary
+        let binary_name = binary_path.file_name().unwrap().to_str().unwrap();
+        assert_eq!(
+            result.config.cmd,
+            Some(vec![format!("/app/{}", binary_name)])
+        );
     }
 }
