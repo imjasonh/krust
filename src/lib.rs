@@ -5,5 +5,6 @@ pub mod config;
 pub mod image;
 pub mod manifest;
 pub mod registry;
+pub mod resolve;
 
 pub use anyhow::Result;

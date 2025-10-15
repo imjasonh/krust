@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use base64::Engine;
+use bytes::Bytes;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -556,7 +557,7 @@ impl RegistryClient {
         image_ref: &str,
         descriptor: &OciDescriptor,
         auth: &RegistryAuth,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<Bytes> {
         let reference = ImageReference::parse(image_ref)?;
         let token = self
             .authenticate(&reference.registry, &reference.repository, auth)
@@ -589,8 +590,7 @@ impl RegistryClient {
                         redirect_response.status()
                     );
                 }
-                let body = redirect_response.bytes().await?;
-                return Ok(body.to_vec());
+                return Ok(redirect_response.bytes().await?);
             }
         }
 
@@ -602,8 +602,7 @@ impl RegistryClient {
             );
         }
 
-        let body = response.bytes().await?;
-        Ok(body.to_vec())
+        Ok(response.bytes().await?)
     }
 
     // Push a blob to the registry

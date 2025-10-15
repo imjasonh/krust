@@ -50,6 +50,44 @@ pub enum Commands {
         image: String,
     },
 
+    /// Resolve krust:// references in YAML files
+    Resolve {
+        /// Path to YAML file or directory containing YAML files
+        #[arg(short = 'f', long = "filename", required = true)]
+        filenames: Vec<PathBuf>,
+
+        /// Target platforms (e.g., linux/amd64, linux/arm64)
+        #[arg(long, value_delimiter = ',')]
+        platform: Option<Vec<String>>,
+
+        /// Repository prefix (e.g., ghcr.io/username)
+        #[arg(env = "KRUST_REPO")]
+        repo: Option<String>,
+
+        /// Tag to apply to the images (e.g., latest, v1.0.0)
+        #[arg(long)]
+        tag: Option<String>,
+    },
+
+    /// Build images and apply resolved YAML with kubectl
+    Apply {
+        /// Path to YAML file or directory containing YAML files
+        #[arg(short = 'f', long = "filename", required = true)]
+        filenames: Vec<PathBuf>,
+
+        /// Target platforms (e.g., linux/amd64, linux/arm64)
+        #[arg(long, value_delimiter = ',')]
+        platform: Option<Vec<String>>,
+
+        /// Repository prefix (e.g., ghcr.io/username)
+        #[arg(env = "KRUST_REPO")]
+        repo: Option<String>,
+
+        /// Tag to apply to the images (e.g., latest, v1.0.0)
+        #[arg(long)]
+        tag: Option<String>,
+    },
+
     /// Show version information
     Version,
 }

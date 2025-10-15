@@ -1,0 +1,32 @@
+# Test basic apply command (requires kubectl)
+
+[!exec:kubectl] skip 'kubectl not available'
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+-- src/main.rs --
+fn main() {
+    println!("Hello from test-app!");
+}
+
+-- deployment.yaml --
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-config
+data:
+  key: value
+
+# Apply should resolve and apply with kubectl
+# Note: This test only verifies the command runs, not the actual k8s deployment
+# since we don't have a test cluster
+env KRUST_REPO=ttl.sh/test
+! exec ./krust apply -f deployment.yaml
+# kubectl will fail with connection error in test environment, but that's expected
+stderr 'kubectl'

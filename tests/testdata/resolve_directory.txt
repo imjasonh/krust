@@ -1,0 +1,43 @@
+# Test resolving references in a directory of YAML files
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+-- src/main.rs --
+fn main() {
+    println!("Hello!");
+}
+
+-- k8s/deployment.yaml --
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  template:
+    spec:
+      containers:
+      - image: krust://.
+
+-- k8s/service.yaml --
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+spec:
+  selector:
+    app: test
+
+# Resolve should process all YAML files in directory
+env KRUST_REPO=ttl.sh/test
+exec ./krust resolve -f k8s
+stdout 'kind: Deployment'
+stdout 'kind: Service'
+stdout 'ttl.sh/test/test-app@sha256:'
+! stdout 'krust://'
+stderr 'Found 1 unique krust:// reference'
