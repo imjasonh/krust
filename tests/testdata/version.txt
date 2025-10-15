@@ -2,8 +2,8 @@
 
 # Test --version flag
 exec ./krust --version
-stdout 'krust '
+stdout '^krust '
 
 # Test version subcommand
 exec ./krust version
-stdout 'krust '
+stdout '^krust '
