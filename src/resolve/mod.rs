@@ -196,4 +196,71 @@ image: krust://./app2
         assert!(refs.contains("./app1"));
         assert!(refs.contains("./app2"));
     }
+
+    #[test]
+    fn test_read_yaml_files_single_file() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.yaml");
+        fs::write(&file_path, "image: krust://./app").unwrap();
+
+        let files = read_yaml_files(&file_path).unwrap();
+        assert_eq!(files.len(), 1);
+        assert!(files[0].0.contains("test.yaml"));
+        assert!(files[0].1.contains("krust://./app"));
+    }
+
+    #[test]
+    fn test_read_yaml_files_directory() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("test1.yaml"), "image: krust://./app1").unwrap();
+        fs::write(dir.path().join("test2.yml"), "image: krust://./app2").unwrap();
+        fs::write(dir.path().join("test.txt"), "not yaml").unwrap();
+
+        let files = read_yaml_files(dir.path()).unwrap();
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|(name, _)| name.contains("test1.yaml")));
+        assert!(files.iter().any(|(name, _)| name.contains("test2.yml")));
+    }
+
+    #[test]
+    fn test_read_yaml_files_empty_directory() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let result = read_yaml_files(dir.path());
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No YAML files found"));
+    }
+
+    #[test]
+    fn test_read_yaml_files_nonexistent_path() {
+        use std::path::PathBuf;
+
+        let path = PathBuf::from("/nonexistent/path/that/does/not/exist");
+        let result = read_yaml_files(&path);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Path does not exist"));
+    }
+
+    #[test]
+    fn test_replace_references_empty_replacements() {
+        let yaml = r#"image: krust://./app"#;
+        let replacements = HashMap::new();
+
+        let result = replace_krust_references(yaml, &replacements).unwrap();
+        // Should keep original reference if no replacement found
+        assert!(result.contains("krust://./app"));
+    }
 }
