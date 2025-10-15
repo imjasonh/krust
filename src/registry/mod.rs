@@ -1,11 +1,6 @@
 use anyhow::{Context, Result};
 use base64::Engine;
-use http_body_util::{BodyExt, Full};
-use hyper::body::Bytes;
-use hyper::{Method, Request, StatusCode};
-use hyper_tls::HttpsConnector;
-use hyper_util::client::legacy::{connect::HttpConnector, Client};
-use hyper_util::rt::TokioExecutor;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info};
@@ -188,19 +183,75 @@ impl ImageReference {
 }
 
 pub struct RegistryClient {
-    client: Client<HttpsConnector<HttpConnector>, Full<Bytes>>,
+    client: reqwest::Client,
     #[allow(dead_code)]
     auth_cache: HashMap<String, String>, // registry -> token
 }
 
 impl RegistryClient {
     pub fn new() -> Result<Self> {
-        let https = HttpsConnector::new();
-        let client = Client::builder(TokioExecutor::new()).build(https);
+        // Create two clients - one with redirects, one without
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
         Ok(Self {
             client,
             auth_cache: HashMap::new(),
         })
+    }
+
+    /// Check if a blob exists in the registry using HEAD request
+    async fn blob_exists(
+        &mut self,
+        registry: &str,
+        repository: &str,
+        digest: &str,
+        auth: &RegistryAuth,
+    ) -> Result<bool> {
+        let url = format!("https://{}/v2/{}/blobs/{}", registry, repository, digest);
+
+        let token = self.authenticate(registry, repository, auth).await?;
+
+        let mut req = self.client.head(&url);
+
+        if let Some(token) = token {
+            req = req.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = req.send().await?;
+
+        Ok(response.status().is_success())
+    }
+
+    /// Check if a manifest exists in the registry using HEAD request
+    async fn manifest_exists(
+        &mut self,
+        registry: &str,
+        repository: &str,
+        digest: &str,
+        auth: &RegistryAuth,
+    ) -> Result<bool> {
+        let url = format!(
+            "https://{}/v2/{}/manifests/{}",
+            registry, repository, digest
+        );
+
+        let token = self.authenticate(registry, repository, auth).await?;
+
+        let mut req = self.client
+            .head(&url)
+            .header(
+                "Accept",
+                "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
+            );
+
+        if let Some(token) = token {
+            req = req.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = req.send().await?;
+
+        Ok(response.status().is_success())
     }
 
     // Authenticate with registry and get bearer token if needed
@@ -216,9 +267,17 @@ impl RegistryClient {
                 self.get_anonymous_token(registry, repository).await
             }
             RegistryAuth::Basic { username, password } => {
-                // Use basic auth directly or get token
-                self.get_token_with_basic_auth(registry, repository, username, password)
-                    .await
+                // Check if this is actually an OAuth token disguised as basic auth
+                // GCR/GAR credential helpers return username like "_dcgcloud_token" or "oauth2accesstoken"
+                // with the password being an OAuth token
+                if username.starts_with("_") || username == "oauth2accesstoken" {
+                    // Treat the password as a bearer token
+                    Ok(Some(password.clone()))
+                } else {
+                    // Use basic auth directly or get token
+                    self.get_token_with_basic_auth(registry, repository, username, password)
+                        .await
+                }
             }
             RegistryAuth::Bearer { token } => Ok(Some(token.clone())),
         }
@@ -231,12 +290,7 @@ impl RegistryClient {
     ) -> Result<Option<String>> {
         // First check API support
         let check_url = format!("https://{}/v2/", registry);
-        let req = Request::builder()
-            .method(Method::GET)
-            .uri(&check_url)
-            .body(Full::new(Bytes::new()))?;
-
-        let response = self.client.request(req).await?;
+        let response = self.client.get(&check_url).send().await?;
 
         if response.status() == StatusCode::UNAUTHORIZED {
             if let Some(www_auth) = response.headers().get("www-authenticate") {
@@ -262,13 +316,12 @@ impl RegistryClient {
         let auth_header = format!("{}:{}", username, password);
         let encoded_auth = base64::engine::general_purpose::STANDARD.encode(auth_header.as_bytes());
 
-        let req = Request::builder()
-            .method(Method::GET)
-            .uri(&check_url)
+        let response = self
+            .client
+            .get(&check_url)
             .header("Authorization", format!("Basic {}", encoded_auth))
-            .body(Full::new(Bytes::new()))?;
-
-        let response = self.client.request(req).await?;
+            .send()
+            .await?;
 
         if response.status() == StatusCode::UNAUTHORIZED {
             if let Some(www_auth) = response.headers().get("www-authenticate") {
@@ -336,16 +389,10 @@ impl RegistryClient {
             challenge.realm, challenge.service, scope
         );
 
-        let req = Request::builder()
-            .method(Method::GET)
-            .uri(&token_url)
-            .body(Full::new(Bytes::new()))?;
-
-        let response = self.client.request(req).await?;
+        let response = self.client.get(&token_url).send().await?;
 
         if response.status().is_success() {
-            let body = response.collect().await?.to_bytes();
-            let token_response: TokenResponse = serde_json::from_slice(&body)?;
+            let token_response: TokenResponse = response.json().await?;
             let token = if !token_response.token.is_empty() {
                 token_response.token
             } else {
@@ -377,17 +424,15 @@ impl RegistryClient {
         let auth_header = format!("{}:{}", username, password);
         let encoded_auth = base64::engine::general_purpose::STANDARD.encode(auth_header.as_bytes());
 
-        let req = Request::builder()
-            .method(Method::GET)
-            .uri(&token_url)
+        let response = self
+            .client
+            .get(&token_url)
             .header("Authorization", format!("Basic {}", encoded_auth))
-            .body(Full::new(Bytes::new()))?;
-
-        let response = self.client.request(req).await?;
+            .send()
+            .await?;
 
         if response.status().is_success() {
-            let body = response.collect().await?.to_bytes();
-            let token_response: TokenResponse = serde_json::from_slice(&body)?;
+            let token_response: TokenResponse = response.json().await?;
             let token = if !token_response.token.is_empty() {
                 token_response.token
             } else {
@@ -428,17 +473,15 @@ impl RegistryClient {
 
         debug!("Pulling manifest from URL: {}", url);
 
-        let mut req_builder = Request::builder()
-            .method(Method::GET)
-            .uri(&url)
+        let mut req = self.client
+            .get(&url)
             .header("Accept", "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json");
 
         if let Some(token) = token {
-            req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
+            req = req.header("Authorization", format!("Bearer {}", token));
         }
 
-        let req = req_builder.body(Full::new(Bytes::new()))?;
-        let response = self.client.request(req).await?;
+        let response = req.send().await?;
 
         if !response.status().is_success() {
             anyhow::bail!("Failed to pull manifest: {}", response.status());
@@ -451,7 +494,7 @@ impl RegistryClient {
             .unwrap_or("")
             .to_string();
 
-        let body = response.collect().await?.to_bytes();
+        let body = response.bytes().await?;
         debug!("Manifest response body: {}", String::from_utf8_lossy(&body));
 
         // Try to parse as either image manifest or image index
@@ -472,9 +515,8 @@ impl RegistryClient {
 
                 debug!("Pulling platform-specific manifest from URL: {}", url);
 
-                let mut req_builder = Request::builder()
-                    .method(Method::GET)
-                    .uri(&url)
+                let mut req = self.client
+                    .get(&url)
                     .header("Accept", "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json");
 
                 // Re-authenticate for the platform-specific request
@@ -482,17 +524,16 @@ impl RegistryClient {
                     .authenticate(&reference.registry, &reference.repository, auth)
                     .await?;
                 if let Some(token) = platform_token {
-                    req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
+                    req = req.header("Authorization", format!("Bearer {}", token));
                 }
 
-                let req = req_builder.body(Full::new(Bytes::new()))?;
-                let response = self.client.request(req).await?;
+                let response = req.send().await?;
 
                 if !response.status().is_success() {
                     anyhow::bail!("Failed to pull platform manifest: {}", response.status());
                 }
 
-                let platform_body = response.collect().await?.to_bytes();
+                let platform_body = response.bytes().await?;
                 debug!(
                     "Platform manifest response body: {}",
                     String::from_utf8_lossy(&platform_body)
@@ -526,45 +567,30 @@ impl RegistryClient {
             reference.registry, reference.repository, descriptor.digest
         );
 
-        let mut req_builder = Request::builder().method(Method::GET).uri(&url);
+        let mut req = self.client.get(&url);
 
         if let Some(token) = token {
-            req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
+            req = req.header("Authorization", format!("Bearer {}", token));
         }
 
-        let req = req_builder.body(Full::new(Bytes::new()))?;
-        let response = self.client.request(req).await?;
+        let response = req.send().await?;
 
-        // Handle redirect responses (common for blob downloads)
-        if response.status() == StatusCode::TEMPORARY_REDIRECT
-            || response.status() == StatusCode::MOVED_PERMANENTLY
-        {
+        // Handle redirects manually (since we disabled automatic redirects)
+        if response.status().is_redirection() {
             if let Some(location) = response.headers().get("location") {
                 let redirect_url = location.to_str()?;
-                debug!("Following redirect to: {}", redirect_url);
-
-                let redirect_req = Request::builder()
-                    .method(Method::GET)
-                    .uri(redirect_url)
-                    .body(Full::new(Bytes::new()))?;
-
-                let redirect_response = self.client.request(redirect_req).await?;
-
+                debug!("Following blob download redirect to: {}", redirect_url);
+                // Don't include auth header for redirects (might be to CDN/GCS)
+                let redirect_response = self.client.get(redirect_url).send().await?;
                 if !redirect_response.status().is_success() {
                     anyhow::bail!(
-                        "Failed to pull blob {} from redirect URL: {}",
+                        "Failed to pull blob {} from redirect: {}",
                         descriptor.digest,
                         redirect_response.status()
                     );
                 }
-
-                let body = redirect_response.collect().await?.to_bytes();
+                let body = redirect_response.bytes().await?;
                 return Ok(body.to_vec());
-            } else {
-                anyhow::bail!(
-                    "Received redirect for blob {} but no location header",
-                    descriptor.digest
-                );
             }
         }
 
@@ -576,7 +602,7 @@ impl RegistryClient {
             );
         }
 
-        let body = response.collect().await?.to_bytes();
+        let body = response.bytes().await?;
         Ok(body.to_vec())
     }
 
@@ -588,8 +614,18 @@ impl RegistryClient {
         digest: &str,
         auth: &RegistryAuth,
     ) -> Result<()> {
-        info!("Starting blob push for digest: {} to {}", digest, image_ref);
         let reference = ImageReference::parse(image_ref)?;
+
+        // Check if blob already exists
+        if self
+            .blob_exists(&reference.registry, &reference.repository, digest, auth)
+            .await?
+        {
+            debug!("Blob {} already exists, skipping push", digest);
+            return Ok(());
+        }
+
+        info!("Pushing blob: {} to {}", digest, image_ref);
         let token = self
             .authenticate(&reference.registry, &reference.repository, auth)
             .await?;
@@ -600,17 +636,13 @@ impl RegistryClient {
             reference.registry, reference.repository
         );
 
-        let mut req_builder = Request::builder()
-            .method(Method::POST)
-            .uri(&upload_url)
-            .header("Content-Length", "0");
+        let mut req = self.client.post(&upload_url).header("Content-Length", "0");
 
         if let Some(token) = &token {
-            req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
+            req = req.header("Authorization", format!("Bearer {}", token));
         }
 
-        let req = req_builder.body(Full::new(Bytes::new()))?;
-        let response = self.client.request(req).await?;
+        let response = req.send().await?;
 
         if !response.status().is_success() {
             anyhow::bail!("Failed to start blob upload: {}", response.status());
@@ -624,16 +656,15 @@ impl RegistryClient {
 
         debug!("Upload location header: {}", location);
 
-        // Complete upload with PUT
+        // Try monolithic upload (PUT with body and ?digest=)
+        // If GAR redirects, it means it wants resumable upload instead
         let put_url = if location.starts_with("http") {
-            // Check if location already has query parameters
             if location.contains('?') {
                 format!("{}&digest={}", location, digest)
             } else {
                 format!("{}?digest={}", location, digest)
             }
         } else if location.starts_with("/v2/") {
-            // Relative URL starting with /v2/
             if location.contains('?') {
                 format!(
                     "https://{}{}&digest={}",
@@ -646,33 +677,133 @@ impl RegistryClient {
                 )
             }
         } else {
-            // Assume it's just a UUID or path segment
             format!(
                 "https://{}/v2/{}/blobs/uploads/{}?digest={}",
                 reference.registry, reference.repository, location, digest
             )
         };
 
-        debug!("Uploading blob to URL: {}", put_url);
+        debug!("Uploading blob to: {}", &put_url[..100.min(put_url.len())]);
 
-        let mut req_builder = Request::builder()
-            .method(Method::PUT)
-            .uri(&put_url)
+        // Try monolithic upload first
+        let mut monolithic_req = self
+            .client
+            .put(&put_url)
             .header("Content-Type", "application/octet-stream")
-            .header("Content-Length", data.len().to_string());
+            .body(data.to_vec());
 
-        if let Some(token) = token {
-            req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
+        if let Some(ref token_str) = token {
+            monolithic_req =
+                monolithic_req.header("Authorization", format!("Bearer {}", token_str));
         }
 
-        let req = req_builder.body(Full::new(Bytes::copy_from_slice(data)))?;
-        let response = self.client.request(req).await?;
+        let monolithic_response = monolithic_req.send().await?;
+        let monolithic_status = monolithic_response.status();
 
-        if !response.status().is_success() {
-            anyhow::bail!("Failed to upload blob: {}", response.status());
+        // If monolithic upload succeeds, we're done
+        if monolithic_status.is_success() {
+            return Ok(());
         }
 
-        Ok(())
+        // If we get a redirect, GAR wants resumable upload
+        // Don't follow the redirect - just use resumable flow
+        if monolithic_status.is_redirection() {
+            // Build upload location without digest for PATCH
+            let upload_location = if location.starts_with("http") {
+                location.to_string()
+            } else if location.starts_with("/") {
+                // Relative URL starting with / (handles /v2/... and /artifacts-uploads/...)
+                format!("https://{}{}", reference.registry, location)
+            } else {
+                // Just a UUID
+                format!(
+                    "https://{}/v2/{}/blobs/uploads/{}",
+                    reference.registry, reference.repository, location
+                )
+            };
+
+            // PATCH to upload data (don't follow redirects manually)
+            let mut patch_req = self
+                .client
+                .patch(&upload_location)
+                .header("Content-Type", "application/octet-stream")
+                .body(data.to_vec());
+
+            if let Some(ref token_str) = token {
+                patch_req = patch_req.header("Authorization", format!("Bearer {}", token_str));
+            }
+
+            let patch_response = patch_req.send().await?;
+            let patch_status = patch_response.status();
+            let patch_headers = patch_response.headers().clone();
+
+            // PATCH might also return 301 redirect - treat as success if so
+            let finalize_location = if patch_status.is_redirection() {
+                patch_headers
+                    .get("location")
+                    .and_then(|h| h.to_str().ok())
+                    .unwrap_or(location)
+            } else if patch_status.is_success() {
+                // Get location from successful PATCH response
+                patch_headers
+                    .get("location")
+                    .and_then(|h| h.to_str().ok())
+                    .unwrap_or(location)
+            } else {
+                let body = patch_response.text().await.unwrap_or_default();
+                anyhow::bail!("Failed to PATCH blob: {} - {}", patch_status, body);
+            };
+
+            // Build finalize URL with digest
+            let finalize_url = if finalize_location.starts_with("http") {
+                if finalize_location.contains('?') {
+                    format!("{}&digest={}", finalize_location, digest)
+                } else {
+                    format!("{}?digest={}", finalize_location, digest)
+                }
+            } else if finalize_location.starts_with("/") {
+                // Relative URL starting with / (handles /v2/... and /artifacts-uploads/...)
+                if finalize_location.contains('?') {
+                    format!(
+                        "https://{}{}&digest={}",
+                        reference.registry, finalize_location, digest
+                    )
+                } else {
+                    format!(
+                        "https://{}{}?digest={}",
+                        reference.registry, finalize_location, digest
+                    )
+                }
+            } else {
+                // Just a UUID
+                format!(
+                    "https://{}/v2/{}/blobs/uploads/{}?digest={}",
+                    reference.registry, reference.repository, finalize_location, digest
+                )
+            };
+
+            // PUT to finalize
+            let mut finalize_req = self.client.put(&finalize_url).header("Content-Length", "0");
+
+            if let Some(ref token_str) = token {
+                finalize_req =
+                    finalize_req.header("Authorization", format!("Bearer {}", token_str));
+            }
+
+            let finalize_response = finalize_req.send().await?;
+            let finalize_status = finalize_response.status();
+
+            if !finalize_status.is_success() {
+                let body = finalize_response.text().await.unwrap_or_default();
+                anyhow::bail!("Failed to finalize: {} - {}", finalize_status, body);
+            }
+
+            return Ok(());
+        }
+
+        // If not success or redirect, fail
+        let body = monolithic_response.text().await.unwrap_or_default();
+        anyhow::bail!("Failed to upload blob: {} - {}", monolithic_status, body)
     }
 
     // Push a manifest to the registry
@@ -683,44 +814,68 @@ impl RegistryClient {
         auth: &RegistryAuth,
     ) -> Result<(String, String)> {
         let reference = ImageReference::parse(image_ref)?;
+        let manifest_json = serde_json::to_vec_pretty(manifest)?;
+        let manifest_digest = format!("sha256:{}", sha256::digest(&manifest_json));
+
+        // Check if manifest already exists
+        if self
+            .manifest_exists(
+                &reference.registry,
+                &reference.repository,
+                &manifest_digest,
+                auth,
+            )
+            .await?
+        {
+            debug!("Manifest {} already exists, skipping push", manifest_digest);
+            let digest_ref = format!(
+                "{}/{}@{}",
+                reference.registry, reference.repository, manifest_digest
+            );
+            return Ok((digest_ref, manifest_digest));
+        }
+
+        info!("Pushing manifest with digest: {}", manifest_digest);
+
         let token = self
             .authenticate(&reference.registry, &reference.repository, auth)
             .await?;
 
-        let manifest_ref = reference.tag.as_deref().unwrap_or("latest");
+        // Use tag if provided, otherwise push by digest
+        let manifest_ref = reference.tag.as_deref().unwrap_or(&manifest_digest);
         let url = format!(
             "https://{}/v2/{}/manifests/{}",
             reference.registry, reference.repository, manifest_ref
         );
 
-        let manifest_json = serde_json::to_vec_pretty(manifest)?;
+        info!("Pushing manifest to: {}", url);
 
-        let mut req_builder = Request::builder()
-            .method(Method::PUT)
-            .uri(&url)
+        let mut req = self
+            .client
+            .put(&url)
             .header("Content-Type", &manifest.media_type)
-            .header("Content-Length", manifest_json.len().to_string());
+            .body(manifest_json.clone());
 
-        if let Some(token) = token {
-            req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
+        if let Some(token) = &token {
+            req = req.header("Authorization", format!("Bearer {}", token));
         }
 
-        let req = req_builder.body(Full::new(Bytes::copy_from_slice(&manifest_json)))?;
-        let response = self.client.request(req).await?;
+        let response = req.send().await?;
+        let status = response.status();
+        let headers = response.headers().clone();
 
-        if !response.status().is_success() {
-            anyhow::bail!("Failed to push manifest: {}", response.status());
+        if !status.is_success() {
+            let body_str = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to push manifest: {} - {}", status, body_str);
         }
 
-        let digest = response
-            .headers()
+        let digest = headers
             .get("docker-content-digest")
             .and_then(|h| h.to_str().ok())
             .unwrap_or("")
             .to_string();
 
-        let location = response
-            .headers()
+        let location = headers
             .get("location")
             .and_then(|h| h.to_str().ok())
             .unwrap_or(&url)
@@ -737,12 +892,10 @@ impl RegistryClient {
         layers: Vec<(Vec<u8>, String)>,
         auth: &RegistryAuth,
     ) -> Result<(String, usize)> {
-        let image_ref = format!("{}:temp", repository);
-
         // Push config blob
         let config_digest = format!("sha256:{}", sha256::digest(&config_data));
         debug!("Pushing config blob: {}", config_digest);
-        self.push_blob(&image_ref, &config_data, &config_digest, auth)
+        self.push_blob(repository, &config_data, &config_digest, auth)
             .await?;
 
         // Push layers and build manifest
@@ -750,7 +903,7 @@ impl RegistryClient {
         for (layer_data, media_type) in layers {
             let digest = format!("sha256:{}", sha256::digest(&layer_data));
             debug!("Pushing layer: {}", digest);
-            self.push_blob(&image_ref, &layer_data, &digest, auth)
+            self.push_blob(repository, &layer_data, &digest, auth)
                 .await?;
 
             manifest_layers.push(OciDescriptor {
@@ -777,8 +930,8 @@ impl RegistryClient {
             annotations: None,
         };
 
-        let (_, digest) = self.push_manifest(&image_ref, &manifest, auth).await?;
-        let reference = ImageReference::parse(&image_ref)?;
+        let (_, digest) = self.push_manifest(repository, &manifest, auth).await?;
+        let reference = ImageReference::parse(repository)?;
         let digest_ref = format!("{}/{}@{}", reference.registry, reference.repository, digest);
         let manifest_size = serde_json::to_vec(&manifest)?.len();
 
@@ -825,17 +978,14 @@ impl RegistryClient {
         base_image_ref: &str,
         base_auth: &RegistryAuth,
     ) -> Result<(String, usize)> {
-        let image_ref = format!("{}:temp", repository);
-
         // Push config blob
         let config_digest = format!("sha256:{}", sha256::digest(&config_data));
-        debug!("Pushing config blob: {}", config_digest);
-        self.push_blob(&image_ref, &config_data, &config_digest, auth)
+        self.push_blob(repository, &config_data, &config_digest, auth)
             .await?;
 
         // Copy base image layers if they don't exist in target registry
         let base_reference = ImageReference::parse(base_image_ref)?;
-        let target_reference = ImageReference::parse(&image_ref)?;
+        let target_reference = ImageReference::parse(repository)?;
 
         // Check if we need to copy base layers (cross-registry scenario)
         let need_copy_layers = base_reference.registry != target_reference.registry;
@@ -868,7 +1018,7 @@ impl RegistryClient {
                     .await?;
 
                 // Push the layer to target registry
-                self.push_blob(&image_ref, &layer_data, &layer.digest, auth)
+                self.push_blob(repository, &layer_data, &layer.digest, auth)
                     .await?;
             }
         }
@@ -876,7 +1026,7 @@ impl RegistryClient {
         // Push the new application layer
         let new_layer_digest = format!("sha256:{}", sha256::digest(&new_layer_data));
         debug!("Pushing new application layer: {}", new_layer_digest);
-        self.push_blob(&image_ref, &new_layer_data, &new_layer_digest, auth)
+        self.push_blob(repository, &new_layer_data, &new_layer_digest, auth)
             .await?;
 
         // Create manifest with all layers (base + new)
@@ -906,7 +1056,7 @@ impl RegistryClient {
             annotations: None,
         };
 
-        let (_, digest) = self.push_manifest(&image_ref, &oci_manifest, auth).await?;
+        let (_, digest) = self.push_manifest(repository, &oci_manifest, auth).await?;
         let digest_ref = format!(
             "{}/{}@{}",
             target_reference.registry, target_reference.repository, digest
@@ -928,6 +1078,7 @@ impl RegistryClient {
         image_ref: &str,
         manifest_descriptors: Vec<crate::manifest::ManifestDescriptor>,
         auth: &RegistryAuth,
+        push_tag: bool,
     ) -> Result<String> {
         let reference = ImageReference::parse(image_ref)?;
 
@@ -969,9 +1120,17 @@ impl RegistryClient {
             );
         }
 
-        // Serialize and push as manifest
+        // Serialize and calculate digest
         let manifest_json = serde_json::to_vec_pretty(&oci_index)?;
-        let manifest_ref = reference.tag.as_deref().unwrap_or("latest");
+        let manifest_digest = format!("sha256:{}", sha256::digest(&manifest_json));
+
+        // Push by digest or tag based on push_tag flag
+        let manifest_ref = if push_tag {
+            reference.tag.as_deref().unwrap_or("latest")
+        } else {
+            &manifest_digest
+        };
+
         let url = format!(
             "https://{}/v2/{}/manifests/{}",
             reference.registry, reference.repository, manifest_ref
@@ -981,30 +1140,31 @@ impl RegistryClient {
             .authenticate(&reference.registry, &reference.repository, auth)
             .await?;
 
-        let mut req_builder = Request::builder()
-            .method(Method::PUT)
-            .uri(&url)
+        let mut req = self
+            .client
+            .put(&url)
             .header("Content-Type", "application/vnd.oci.image.index.v1+json")
-            .header("Content-Length", manifest_json.len().to_string());
+            .body(manifest_json.clone());
 
         if let Some(token) = token {
-            req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
+            req = req.header("Authorization", format!("Bearer {}", token));
         }
 
-        let req = req_builder.body(Full::new(Bytes::copy_from_slice(&manifest_json)))?;
-        let response = self.client.request(req).await?;
+        let response = req.send().await?;
 
         if !response.status().is_success() {
             anyhow::bail!("Failed to push manifest list: {}", response.status());
         }
 
+        // Get digest from response or use the calculated one
         let digest = response
             .headers()
             .get("docker-content-digest")
             .and_then(|h| h.to_str().ok())
-            .unwrap_or("")
+            .unwrap_or(&manifest_digest)
             .to_string();
 
+        // Always return by digest
         let image_ref = format!("{}/{}@{}", reference.registry, reference.repository, digest);
 
         Ok(image_ref)

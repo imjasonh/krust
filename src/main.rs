@@ -31,7 +31,6 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Build {
             path,
-            image,
             platform,
             no_push,
             tag,
@@ -49,20 +48,10 @@ async fn main() -> Result<()> {
                 .base_image
                 .unwrap_or(config.base_image.clone());
 
-            // Determine the base repository name (without any tag)
-            let target_repo = if let Some(image) = image {
-                // Use explicit image if provided, strip any tag/digest
-                if let Some(pos) = image.rfind([':', '@']) {
-                    image[..pos].to_string()
-                } else {
-                    image
-                }
-            } else {
-                // Build repository name from repo and project name
-                let repo = repo.context("Either --image or KRUST_REPO must be set")?;
-                let project_name = get_project_name(&project_path)?;
-                format!("{}/{}", repo, project_name)
-            };
+            // Build repository name from KRUST_REPO and project name
+            let repo = repo.context("KRUST_REPO must be set")?;
+            let project_name = get_project_name(&project_path)?;
+            let target_repo = format!("{}/{}", repo, project_name);
 
             // Initialize registry client
             let mut registry_client = RegistryClient::new()?;
@@ -142,7 +131,8 @@ async fn main() -> Result<()> {
                             "application/vnd.docker.image.rootfs.diff.tar.gzip".to_string()
                         });
 
-                    // Push layered image (copy base layers if needed + push app layer + manifest)
+                    // Push layered image by digest only (no tag)
+                    // This will be referenced by digest in the final manifest list
                     let (digest_ref, manifest_size) = registry_client
                         .push_layered_image(
                             &target_repo,
@@ -192,20 +182,25 @@ async fn main() -> Result<()> {
                 info!("Creating and pushing manifest list...");
 
                 // Determine the target for the manifest list
-                let manifest_target = if let Some(tag_name) = tag {
+                let has_tag = tag.is_some();
+                let manifest_target = if let Some(tag_name) = &tag {
                     // If --tag is specified, push to that tag
                     format!("{}:{}", target_repo, tag_name)
                 } else {
-                    // If no tag specified, push digest-only by using a temporary tag
-                    // We'll use a temporary tag and return the digest reference
-                    format!("{}:temp-{}", target_repo, std::process::id())
+                    // If no tag specified, push digest-only (no tag)
+                    target_repo.clone()
                 };
 
                 // Get auth for the final image push
                 let final_auth = resolve_auth(&manifest_target)?;
 
                 let manifest_list_ref = registry_client
-                    .push_manifest_list(&manifest_target, manifest_descriptors, &final_auth)
+                    .push_manifest_list(
+                        &manifest_target,
+                        manifest_descriptors,
+                        &final_auth,
+                        has_tag,
+                    )
                     .await?;
 
                 // Output the manifest list reference (always by digest)

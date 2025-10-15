@@ -21,10 +21,6 @@ pub enum Commands {
         #[arg(value_name = "DIRECTORY")]
         path: Option<PathBuf>,
 
-        /// Target image reference (overrides KRUST_REPO)
-        #[arg(short, long, env = "KRUST_IMAGE")]
-        image: Option<String>,
-
         /// Target platforms (e.g., linux/amd64, linux/arm64)
         /// Can be specified multiple times or as a comma-separated list
         #[arg(long, value_delimiter = ',')]
@@ -34,12 +30,13 @@ pub enum Commands {
         #[arg(long)]
         no_push: bool,
 
-        /// Tag to apply to the manifest list (e.g., latest, v1.0.0)
+        /// Tag to apply to the image (e.g., latest, v1.0.0)
+        /// If not specified, only pushes by digest
         #[arg(long)]
         tag: Option<String>,
 
         /// Repository prefix (e.g., ghcr.io/username)
-        #[arg(long, env = "KRUST_REPO")]
+        #[arg(env = "KRUST_REPO")]
         repo: Option<String>,
 
         /// Additional cargo build arguments

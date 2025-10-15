@@ -13,6 +13,6 @@ fn main() {
 }
 
 # Build with --verbose should show DEBUG logs
-[linux] exec ./krust --verbose build --no-push --platform linux/amd64 --image test.local/myapp:latest .
-[darwin] exec ./krust --verbose build --no-push --platform linux/amd64 --image test.local/myapp:latest .
+[linux] exec ./krust --verbose build --no-push --platform linux/amd64 .
+[darwin] exec ./krust --verbose build --no-push --platform linux/amd64 .
 stderr 'DEBUG'

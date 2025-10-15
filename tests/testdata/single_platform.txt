@@ -13,10 +13,10 @@ fn main() {
 }
 
 # Build for single platform
-[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/single:latest .
+[linux] exec ./krust build --no-push --platform linux/amd64 .
 [linux] stderr 'Building for platform: linux/amd64'
 [linux] stderr 'Successfully built image for 1 platform'
 
-[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/single:latest .
+[darwin] exec ./krust build --no-push --platform linux/amd64 .
 [darwin] stderr 'Building for platform: linux/amd64'
 [darwin] stderr 'Successfully built image for 1 platform'

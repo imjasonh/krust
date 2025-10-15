@@ -16,8 +16,12 @@ fn main() {
 }
 
 # Build with custom base image
-[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/alpine-app:latest .
-[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/alpine-app:latest .
-stderr 'Building Rust project'
-stderr 'base-image.*alpine'
-stderr 'Successfully built image'
+[linux] exec ./krust build --no-push --platform linux/amd64 .
+[linux] stderr 'Building Rust project'
+[linux] stderr 'base-image.*alpine'
+[linux] stderr 'Successfully built image'
+
+[darwin] exec ./krust build --no-push --platform linux/amd64 .
+[darwin] stderr 'Building Rust project'
+[darwin] stderr 'base-image.*alpine'
+[darwin] stderr 'Successfully built image'

@@ -14,10 +14,10 @@ fn main() {
 
 # Build for multiple platforms
 # Note: This may fail if toolchains aren't installed, which is expected
-[linux] exec ./krust build --no-push --platform linux/amd64,linux/arm64 --image test.local/multi:latest .
+[linux] exec ./krust build --no-push --platform linux/amd64,linux/arm64 .
 [linux] stderr 'Building for platform: linux/amd64'
 [linux] stderr 'Building for platform: linux/arm64'
 
-[darwin] exec ./krust build --no-push --platform linux/amd64,linux/arm64 --image test.local/multi:latest .
+[darwin] exec ./krust build --no-push --platform linux/amd64,linux/arm64 .
 [darwin] stderr 'Building for platform: linux/amd64'
 [darwin] stderr 'Building for platform: linux/arm64'

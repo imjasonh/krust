@@ -17,7 +17,7 @@ fn main() {
 }
 
 # Build workspace member by specifying its directory
-[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/workspace:latest app
-[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/workspace:latest app
+[linux] exec ./krust build --no-push --platform linux/amd64 app
+[darwin] exec ./krust build --no-push --platform linux/amd64 app
 stderr 'Building Rust project'
 stderr 'Successfully built image'

@@ -31,6 +31,6 @@ env RUST_LOG=debug
 
 # Try to build and push (will fail at registry level, but auth should be resolved)
 # We can verify auth was read from config in debug logs
-! exec ./krust build --platform linux/amd64 --image test.example.com/app:latest .
+! exec ./krust build --platform linux/amd64 .
 stderr 'Resolving auth'
 stderr 'test.example.com'
