@@ -126,9 +126,9 @@ impl AuthConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DockerConfig {
     #[serde(default)]
-    pub auths: HashMap<String, DockerAuthEntry>,
+    pub auths: Option<HashMap<String, DockerAuthEntry>>,
     #[serde(rename = "credHelpers", default)]
-    pub cred_helpers: HashMap<String, String>,
+    pub cred_helpers: Option<HashMap<String, String>>,
     #[serde(rename = "credsStore", skip_serializing_if = "Option::is_none")]
     pub creds_store: Option<String>,
 }

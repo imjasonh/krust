@@ -1,0 +1,36 @@
+# Test basic auth from Docker config
+
+# Create a test project
+-- Cargo.toml --
+[package]
+name = "auth-basic-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Testing basic auth");
+}
+
+# Create Docker config with username/password
+mkdir .docker
+-- .docker/config.json --
+{
+  "auths": {
+    "test.example.com": {
+      "username": "myuser",
+      "password": "mypass"
+    }
+  }
+}
+
+# Set HOME to use our config
+env HOME=$WORK
+env RUST_LOG=debug
+
+# Try to build and push (will fail at registry level, but auth should be resolved)
+# We can verify auth was read from config in debug logs
+! exec ./krust build --platform linux/amd64 --image test.example.com/app:latest .
+stderr 'Resolving auth'
+stderr 'test.example.com'

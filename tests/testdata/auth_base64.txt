@@ -1,0 +1,34 @@
+# Test base64 encoded auth from Docker config
+
+# Create a test project
+-- Cargo.toml --
+[package]
+name = "auth-b64-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Testing base64 auth");
+}
+
+# Create Docker config with base64 auth (testuser:testpass = dGVzdHVzZXI6dGVzdHBhc3M=)
+mkdir .docker
+-- .docker/config.json --
+{
+  "auths": {
+    "ghcr.io": {
+      "auth": "dGVzdHVzZXI6dGVzdHBhc3M="
+    }
+  }
+}
+
+# Set HOME to use our config
+env HOME=$WORK
+env RUST_LOG=debug
+
+# Try to build (will fail at registry, but auth should be resolved)
+! exec ./krust build --platform linux/amd64 --image ghcr.io/user/app:latest .
+stderr 'Resolving auth'
+stderr 'ghcr.io'
