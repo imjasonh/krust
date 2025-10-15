@@ -24,6 +24,7 @@ jobs:
       with:
         toolchain: ${{ matrix.rust }}
         targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+        components: rustfmt,clippy
     - name: Install cross-compilation tools for both architectures
       run: |
         sudo apt-get update
@@ -44,6 +45,9 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
+    - run: make check-fmt
+    - run: make lint
+
     - name: Setup cargo config for CI cross-compilation
       run: |
         mkdir -p .cargo
@@ -58,59 +62,16 @@ jobs:
     - run: make verify-cross-compile
     - run: make build
     - run: make test
+    - run: make test-e2e
 
-    - run: make run-built-image
+    # Only run cross-compilation integration test on x86_64 runners
+    - name: Run integration test (cross-compilation)
       if: matrix.os == 'ubuntu-latest'
-    
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # stable
-      with:
-        toolchain: stable
-        components: rustfmt
-    - name: Check formatting
-      run: make check-fmt
+      run: make run-built-image
 
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # stable
-      with:
-        toolchain: stable
-        components: clippy
-    - name: Run clippy
-      run: make lint
+    - run: cargo install cargo-audit
+    - run: cargo audit
 
-  security-audit:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # stable
-      with:
-        toolchain: stable
-    - name: Install cargo-audit
-      run: cargo install cargo-audit
-    - name: Run security audit
-      run: cargo audit
-
-  # Takes too long to run on CI, so it's commented out for now.
-  # coverage:
-  #   name: Code coverage
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - uses: actions/checkout@v4
-  #   - name: Install Rust
-  #     uses: dtolnay/rust-toolchain@stable
-  #   - name: Install cargo-tarpaulin
-  #     run: cargo install cargo-tarpaulin
-  #   - name: Generate code coverage
-  #     run: cargo tarpaulin --verbose --workspace
+    # TODO: fails in CI for now.
+    #- run: cargo install cargo-tarpaulin
+    #- run: cargo tarpaulin --verbose --workspace
