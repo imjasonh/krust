@@ -1,0 +1,38 @@
+# Test that multiple references to the same path are deduplicated
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+-- src/main.rs --
+fn main() {
+    println!("Hello!");
+}
+
+-- deployment.yaml --
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+spec:
+  containers:
+  - name: app1
+    image: krust://.
+  - name: app2
+    image: krust://.
+  initContainers:
+  - name: init
+    image: krust://.
+
+# Should find only 1 unique reference and build once
+env KRUST_REPO=ttl.sh/test
+exec ./krust resolve -f deployment.yaml
+stdout 'ttl.sh/test/test-app@sha256:'
+stderr 'Found 1 unique krust:// reference'
+! stderr 'Found 3'
+# All three references should be replaced with same digest
+stdout -count=3 'ttl.sh/test/test-app@sha256:'

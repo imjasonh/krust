@@ -1,0 +1,198 @@
+use anyhow::{Context, Result};
+use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+const KRUST_PREFIX: &str = "krust://";
+
+/// Find all krust:// references in YAML documents
+pub fn find_krust_references(yaml_content: &str) -> Result<HashSet<String>> {
+    let mut references = HashSet::new();
+
+    // Parse YAML documents (handle multiple --- separated docs)
+    for doc in serde_yml::Deserializer::from_str(yaml_content) {
+        let value = serde_yml::Value::deserialize(doc)?;
+        find_references_in_value(&value, &mut references);
+    }
+
+    Ok(references)
+}
+
+/// Recursively search for krust:// references in a YAML value
+fn find_references_in_value(value: &serde_yml::Value, references: &mut HashSet<String>) {
+    match value {
+        serde_yml::Value::String(s) => {
+            if let Some(path) = s.strip_prefix(KRUST_PREFIX) {
+                references.insert(path.to_string());
+            }
+        }
+        serde_yml::Value::Sequence(seq) => {
+            for item in seq {
+                find_references_in_value(item, references);
+            }
+        }
+        serde_yml::Value::Mapping(map) => {
+            for (_key, val) in map {
+                find_references_in_value(val, references);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Replace all krust:// references with resolved image digests
+pub fn replace_krust_references(
+    yaml_content: &str,
+    replacements: &HashMap<String, String>,
+) -> Result<String> {
+    let mut result = Vec::new();
+
+    // Parse and process each YAML document
+    let docs: Vec<serde_yml::Value> = serde_yml::Deserializer::from_str(yaml_content)
+        .map(serde_yml::Value::deserialize)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for (i, mut value) in docs.into_iter().enumerate() {
+        replace_in_value(&mut value, replacements);
+
+        // Serialize back to YAML
+        let yaml_str = serde_yml::to_string(&value)?;
+
+        // Add document separator if not the first document
+        if i > 0 {
+            result.push("---\n".to_string());
+        }
+        result.push(yaml_str);
+    }
+
+    Ok(result.join(""))
+}
+
+/// Recursively replace krust:// references in a YAML value
+fn replace_in_value(value: &mut serde_yml::Value, replacements: &HashMap<String, String>) {
+    match value {
+        serde_yml::Value::String(s) => {
+            if let Some(path) = s.strip_prefix(KRUST_PREFIX) {
+                if let Some(replacement) = replacements.get(path) {
+                    *s = replacement.clone();
+                }
+            }
+        }
+        serde_yml::Value::Sequence(seq) => {
+            for item in seq {
+                replace_in_value(item, replacements);
+            }
+        }
+        serde_yml::Value::Mapping(map) => {
+            for (_key, val) in map {
+                replace_in_value(val, replacements);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Read YAML files from a path (file or directory)
+pub fn read_yaml_files(path: &Path) -> Result<Vec<(String, String)>> {
+    let mut files = Vec::new();
+
+    if path.is_file() {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to read file: {}", path.display()))?;
+        files.push((path.display().to_string(), content));
+    } else if path.is_dir() {
+        // Read all .yaml and .yml files in the directory
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let entry_path = entry.path();
+
+            if entry_path.is_file() {
+                if let Some(ext) = entry_path.extension() {
+                    if ext == "yaml" || ext == "yml" {
+                        let content = std::fs::read_to_string(&entry_path)?;
+                        files.push((entry_path.display().to_string(), content));
+                    }
+                }
+            }
+        }
+
+        if files.is_empty() {
+            anyhow::bail!("No YAML files found in directory: {}", path.display());
+        }
+    } else {
+        anyhow::bail!("Path does not exist: {}", path.display());
+    }
+
+    Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_krust_references() {
+        let yaml = r#"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test
+spec:
+  template:
+    spec:
+      containers:
+      - name: app
+        image: krust://./example/hello-krust
+      - name: sidecar
+        image: krust://./example/hello-krust
+"#;
+
+        let refs = find_krust_references(yaml).unwrap();
+        assert_eq!(refs.len(), 1); // Should deduplicate
+        assert!(refs.contains("./example/hello-krust"));
+    }
+
+    #[test]
+    fn test_find_multiple_unique_references() {
+        let yaml = r#"
+containers:
+- image: krust://./app1
+- image: krust://./app2
+- image: regular-image:latest
+"#;
+
+        let refs = find_krust_references(yaml).unwrap();
+        assert_eq!(refs.len(), 2);
+        assert!(refs.contains("./app1"));
+        assert!(refs.contains("./app2"));
+    }
+
+    #[test]
+    fn test_replace_krust_references() {
+        let yaml = r#"image: krust://./example/hello-krust"#;
+
+        let mut replacements = HashMap::new();
+        replacements.insert(
+            "./example/hello-krust".to_string(),
+            "registry.io/repo@sha256:abc123".to_string(),
+        );
+
+        let result = replace_krust_references(yaml, &replacements).unwrap();
+        assert!(result.contains("registry.io/repo@sha256:abc123"));
+        assert!(!result.contains("krust://"));
+    }
+
+    #[test]
+    fn test_multi_document_yaml() {
+        let yaml = r#"
+image: krust://./app1
+---
+image: krust://./app2
+"#;
+
+        let refs = find_krust_references(yaml).unwrap();
+        assert_eq!(refs.len(), 2);
+        assert!(refs.contains("./app1"));
+        assert!(refs.contains("./app2"));
+    }
+}

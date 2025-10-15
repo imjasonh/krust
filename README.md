@@ -332,6 +332,8 @@ Note: [ttl.sh](https://ttl.sh) is a free, temporary container registry perfect f
 
 ## CLI Reference
 
+### Build Command
+
 ```
 krust build [OPTIONS] [DIRECTORY] [-- <CARGO_ARGS>...]
 
@@ -343,9 +345,111 @@ Options:
   -i, --image <IMAGE>        Target image reference (overrides KRUST_REPO)
       --platform <PLATFORM>  Target platform [default: linux/amd64]
       --no-push              Skip pushing the image to registry
+      --tag <TAG>            Tag to apply to the image (e.g., latest, v1.0.0)
       --repo <REPO>          Repository prefix (uses KRUST_REPO env var)
   -v, --verbose              Enable verbose logging
   -h, --help                 Print help
+```
+
+### Resolve Command
+
+The `resolve` command scans YAML files for `krust://` references, builds the referenced images, and outputs resolved YAML with concrete image digests.
+
+```
+krust resolve -f <FILE_OR_DIR> [OPTIONS]
+
+Arguments:
+  -f, --filename <PATH>      Path to YAML file or directory (can be repeated)
+
+Options:
+      --platform <PLATFORM>  Target platforms (comma-separated)
+      --repo <REPO>          Repository prefix (uses KRUST_REPO env var)
+      --tag <TAG>            Tag to apply to built images
+  -v, --verbose              Enable verbose logging
+  -h, --help                 Print help
+```
+
+#### Usage Examples
+
+```bash
+# Resolve a single file
+export KRUST_REPO=ttl.sh/myuser
+krust resolve -f deployment.yaml > resolved.yaml
+
+# Resolve multiple files
+krust resolve -f deployment.yaml -f service.yaml
+
+# Resolve all YAML files in a directory
+krust resolve -f ./k8s/
+
+# Pipe directly to kubectl
+krust resolve -f deployment.yaml | kubectl apply -f -
+
+# Build for multiple platforms
+krust resolve -f deployment.yaml --platform linux/amd64,linux/arm64
+```
+
+#### YAML Reference Syntax
+
+Use `krust://` prefix followed by the path to the Rust project:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  template:
+    spec:
+      containers:
+      - name: app
+        image: krust://./path/to/rust/project
+```
+
+The `resolve` command will:
+1. Find all `krust://` references (deduplicates automatically)
+2. Build each unique project once
+3. Push images to the registry
+4. Replace references with concrete digests (e.g., `ttl.sh/user/app@sha256:...`)
+5. Output resolved YAML to stdout
+
+**Note**: Multiple references to the same path are deduplicated - the image is built only once and all references are updated with the same digest.
+
+### Apply Command
+
+The `apply` command combines `resolve` with `kubectl apply` for a seamless deployment workflow:
+
+```
+krust apply -f <FILE_OR_DIR> [OPTIONS]
+
+Arguments:
+  -f, --filename <PATH>      Path to YAML file or directory (can be repeated)
+
+Options:
+      --platform <PLATFORM>  Target platforms (comma-separated)
+      --repo <REPO>          Repository prefix (uses KRUST_REPO env var)
+      --tag <TAG>            Tag to apply to built images
+  -v, --verbose              Enable verbose logging
+  -h, --help                 Print help
+```
+
+#### Usage Examples
+
+```bash
+# Build and deploy in one command
+export KRUST_REPO=ttl.sh/myuser
+krust apply -f deployment.yaml
+
+# Apply entire directory
+krust apply -f ./k8s/
+
+# Build for multiple platforms and deploy
+krust apply -f deployment.yaml --platform linux/amd64,linux/arm64
+```
+
+The `apply` command is equivalent to:
+```bash
+krust resolve -f deployment.yaml | kubectl apply -f -
 ```
 
 ## Troubleshooting

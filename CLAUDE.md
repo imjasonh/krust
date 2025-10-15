@@ -85,6 +85,11 @@ GAR has special handling for blob uploads that differs from the standard OCI spe
    - Switched to `reqwest` for cleaner API and better redirect handling
    - Disabled automatic redirects to manually handle GAR's upload flow
 
+5. **Memory Efficiency**:
+   - Blob downloads return `bytes::Bytes` instead of `Vec<u8>` to avoid unnecessary copies
+   - Blob uploads require `.to_vec()` due to reqwest's `'static` requirement for request bodies
+   - This is acceptable as reqwest streams the data internally
+
 ### Cross-Compilation on macOS
 
 For Linux targets from macOS, you need:
@@ -149,16 +154,54 @@ The iterative development process:
 4. Fix issues discovered during real usage
 5. Refine UX based on actual workflows
 
+## Features Implemented
+
+### YAML Resolution (`krust resolve`)
+
+Inspired by ko's Kubernetes integration, krust can resolve `krust://` references in YAML files:
+
+1. **Reference Syntax**: Use `krust://path/to/project` in YAML (e.g., `image: krust://./example/hello-krust`)
+2. **Deduplication**: Multiple references to the same path are deduplicated - builds only once
+3. **Multi-document support**: Handles YAML files with multiple `---` separated documents
+4. **Directory support**: Can process entire directories of YAML files with `-f ./k8s/`
+5. **Output**: Resolved YAML to stdout with all `krust://` replaced by digests
+
+**Implementation details**:
+- Uses `serde_yml` (maintained fork of deprecated serde_yaml) for parsing and serialization
+- Recursively walks YAML tree to find all string values with `krust://` prefix
+- Builds each unique path once, stores digest mapping
+- Second pass replaces all references with digests
+- Preserves YAML structure and formatting
+
+**Usage**:
+- `krust resolve -f deployment.yaml | kubectl apply -f -`
+- Or use the convenience command: `krust apply -f deployment.yaml`
+
+### Apply Command (`krust apply`)
+
+Convenience wrapper that combines `resolve` with `kubectl apply`:
+- Resolves `krust://` references
+- Pipes resolved YAML directly to `kubectl apply -f -`
+- Exits with kubectl's exit code
+- Requires `kubectl` to be installed and configured
+
+**Usage**: `krust apply -f deployment.yaml`
+
 ## Future Improvements
 
 Potential enhancements identified:
 1. ~~Registry authentication support~~ ✓ Implemented (supports Docker credential helpers)
-2. Multi-platform image manifests
-3. Build caching
-4. Image layer optimization
-5. Support for custom Dockerfile-like configs
-6. SBOM (Software Bill of Materials) generation
-7. Optimize blob uploads (check if blob exists before uploading)
+2. ~~YAML resolution for Kubernetes deployments~~ ✓ Implemented (`krust resolve`)
+3. Multi-platform image manifests
+4. Build caching
+5. Image layer optimization
+6. Support for custom Dockerfile-like configs
+7. SBOM (Software Bill of Materials) generation
+8. ~~Optimize blob uploads (check if blob exists before uploading)~~ ✓ Implemented
+9. Stream uploads from disk instead of buffering in memory
+   - Currently buffers tar and compressed layer in memory
+   - Could write to temp file, calculate diff_id, then stream upload
+   - Would reduce memory usage for large binaries
 
 ## Useful Commands
 

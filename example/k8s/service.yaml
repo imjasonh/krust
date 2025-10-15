@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-krust-svc
+spec:
+  selector:
+    app: hello-krust
+  ports:
+  - port: 80
+    targetPort: 8080

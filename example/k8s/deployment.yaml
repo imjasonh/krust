@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-krust
+spec:
+  selector:
+    matchLabels:
+      app: hello-krust
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: hello-krust
+    spec:
+      containers:
+      - name: app
+        image: krust://./example/hello-krust

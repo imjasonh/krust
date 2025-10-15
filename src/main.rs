@@ -8,7 +8,9 @@ use krust::{
     image::ImageBuilder,
     manifest::{ManifestDescriptor, Platform},
     registry::RegistryClient,
+    resolve::{find_krust_references, read_yaml_files, replace_krust_references},
 };
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -218,12 +220,214 @@ async fn main() -> Result<()> {
             error!("Push command not yet implemented");
             std::process::exit(1);
         }
+        Commands::Resolve {
+            filenames,
+            platform,
+            repo,
+            tag,
+        } => {
+            let resolved_yaml = resolve_yaml_files(filenames, platform, repo, tag).await?;
+
+            // Output all documents separated by ---
+            for (i, doc) in resolved_yaml.iter().enumerate() {
+                if i > 0 {
+                    println!("---");
+                }
+                print!("{}", doc);
+            }
+        }
+        Commands::Apply {
+            filenames,
+            platform,
+            repo,
+            tag,
+        } => {
+            let resolved_yaml = resolve_yaml_files(filenames, platform, repo, tag).await?;
+
+            // Combine all documents and pipe to kubectl
+            let combined_yaml = resolved_yaml.join("---\n");
+
+            // Execute kubectl apply
+            let mut kubectl = std::process::Command::new("kubectl")
+                .args(["apply", "-f", "-"])
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .context("Failed to execute kubectl - is it installed?")?;
+
+            // Write YAML to kubectl's stdin
+            if let Some(mut stdin) = kubectl.stdin.take() {
+                use std::io::Write;
+                stdin
+                    .write_all(combined_yaml.as_bytes())
+                    .context("Failed to write to kubectl stdin")?;
+            }
+
+            // Wait for kubectl to finish
+            let status = kubectl.wait()?;
+
+            if !status.success() {
+                std::process::exit(status.code().unwrap_or(1));
+            }
+        }
         Commands::Version => {
             println!("krust {}", env!("CARGO_PKG_VERSION"));
         }
     }
 
     Ok(())
+}
+
+/// Resolve krust:// references in YAML files
+async fn resolve_yaml_files(
+    filenames: Vec<PathBuf>,
+    platform: Option<Vec<String>>,
+    repo: Option<String>,
+    tag: Option<String>,
+) -> Result<Vec<String>> {
+    let repo = repo.context("KRUST_REPO must be set")?;
+    let config = Config::load()?;
+
+    // Collect all YAML content and find all krust:// references
+    let mut all_yaml_files = Vec::new();
+    let mut all_references = std::collections::HashSet::new();
+
+    for path in &filenames {
+        let yaml_files = read_yaml_files(path)?;
+        for (filename, content) in &yaml_files {
+            let refs = find_krust_references(content)?;
+            all_references.extend(refs);
+            all_yaml_files.push((filename.clone(), content.clone()));
+        }
+    }
+
+    info!(
+        "Found {} unique krust:// reference(s)",
+        all_references.len()
+    );
+
+    // Build and push images for each unique reference
+    let mut replacements = HashMap::new();
+    let mut registry_client = RegistryClient::new()?;
+
+    for krust_path in all_references {
+        info!("Building image for: krust://{}", krust_path);
+
+        // Resolve the path (could be relative like ./example/hello-krust)
+        let project_path = PathBuf::from(&krust_path);
+
+        if !project_path.exists() {
+            anyhow::bail!("Path does not exist: {}", krust_path);
+        }
+
+        // Get project name
+        let project_name = get_project_name(&project_path)?;
+        let target_repo = format!("{}/{}", repo, project_name);
+
+        // Load project config
+        let project_config = Config::load_project_config(&project_path)?;
+        let base_image = project_config
+            .base_image
+            .unwrap_or(config.base_image.clone());
+
+        // Determine platforms
+        let platforms = if let Some(ref platforms) = platform {
+            platforms.clone()
+        } else {
+            // Default to linux/amd64 for resolve
+            vec!["linux/amd64".to_string()]
+        };
+
+        // Build for each platform
+        let mut manifest_descriptors = Vec::new();
+
+        for platform_str in &platforms {
+            info!("Building {} for platform: {}", krust_path, platform_str);
+
+            let target = get_rust_target_triple(platform_str)?;
+            let builder = RustBuilder::new(&project_path, &target);
+            let build_result = builder.build()?;
+
+            let image_builder = ImageBuilder::new(
+                build_result.binary_path,
+                base_image.clone(),
+                platform_str.clone(),
+            );
+
+            let base_auth = resolve_auth(&base_image)?;
+            let (config_data, layer_data, manifest) = image_builder
+                .build(&mut registry_client, &base_auth)
+                .await?;
+
+            // Push the image
+            let push_auth = resolve_auth(&target_repo)?;
+            let app_layer_media_type = manifest
+                .layers
+                .last()
+                .map(|l| l.media_type.clone())
+                .unwrap_or_else(|| "application/vnd.docker.image.rootfs.diff.tar.gzip".to_string());
+
+            let (digest_ref, manifest_size) = registry_client
+                .push_layered_image(
+                    &target_repo,
+                    config_data,
+                    layer_data,
+                    app_layer_media_type,
+                    &manifest,
+                    &push_auth,
+                    &base_image,
+                    &base_auth,
+                )
+                .await?;
+
+            // Parse platform
+            let parts: Vec<&str> = platform_str.split('/').collect();
+            let (os, arch) = if parts.len() >= 2 {
+                (parts[0].to_string(), parts[1].to_string())
+            } else {
+                return Err(anyhow::anyhow!("Invalid platform format: {}", platform_str));
+            };
+
+            let digest = digest_ref.split('@').next_back().unwrap_or("").to_string();
+
+            manifest_descriptors.push(ManifestDescriptor {
+                media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
+                size: manifest_size as i64,
+                digest,
+                platform: Platform {
+                    architecture: arch,
+                    os,
+                    variant: None,
+                },
+            });
+        }
+
+        // Push manifest list
+        let has_tag = tag.is_some();
+        let manifest_target = if let Some(tag_name) = &tag {
+            format!("{}:{}", target_repo, tag_name)
+        } else {
+            target_repo.clone()
+        };
+
+        let final_auth = resolve_auth(&manifest_target)?;
+        let image_ref = registry_client
+            .push_manifest_list(&manifest_target, manifest_descriptors, &final_auth, has_tag)
+            .await?;
+
+        info!("Resolved krust://{} -> {}", krust_path, image_ref);
+        replacements.insert(krust_path, image_ref);
+    }
+
+    // Replace references in all YAML files and return resolved docs
+    let mut output_docs = Vec::new();
+
+    for (filename, content) in &all_yaml_files {
+        info!("Resolving references in: {}", filename);
+        let resolved = replace_krust_references(content, &replacements)?;
+        output_docs.push(resolved);
+    }
+
+    Ok(output_docs)
 }
 
 fn get_project_name(project_path: &Path) -> Result<String> {

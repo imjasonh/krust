@@ -1,0 +1,32 @@
+# Test basic resolve with single YAML file and single krust:// reference
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+-- src/main.rs --
+fn main() {
+    println!("Hello from test-app!");
+}
+
+-- deployment.yaml --
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+spec:
+  containers:
+  - name: app
+    image: krust://.
+
+# Resolve should build and replace reference
+env KRUST_REPO=ttl.sh/test
+exec ./krust resolve -f deployment.yaml
+stdout 'ttl.sh/test/test-app@sha256:'
+! stdout 'krust://'
+stderr 'Found 1 unique krust:// reference'
+stderr 'Building image for: krust://.'

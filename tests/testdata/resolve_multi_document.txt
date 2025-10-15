@@ -1,0 +1,47 @@
+# Test YAML file with multiple documents separated by ---
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+-- src/main.rs --
+fn main() {
+    println!("Hello!");
+}
+
+-- manifests.yaml --
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config
+data:
+  key: value
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod1
+spec:
+  containers:
+  - image: krust://.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod2
+spec:
+  containers:
+  - image: krust://.
+
+# Should handle multiple documents and preserve structure
+env KRUST_REPO=ttl.sh/test
+exec ./krust resolve -f manifests.yaml
+stdout 'kind: ConfigMap'
+stdout 'kind: Pod'
+stdout -count=2 'ttl.sh/test/test-app@sha256:'
+stdout -count=2 '---'
+stderr 'Found 1 unique krust:// reference'
