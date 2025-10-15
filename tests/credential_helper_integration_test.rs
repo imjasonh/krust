@@ -100,10 +100,15 @@ fn test_resolve_auth_from_config() -> Result<()> {
     env::remove_var("XDG_RUNTIME_DIR");
     env::set_var("HOME", tmp_dir.path());
 
-    // TODO: Implement actual credential resolution from Docker config
-    // For now, should resolve to anonymous auth
+    // Should resolve credentials from config
     let auth = resolve_auth("test.registry.io/myimage")?;
-    assert!(matches!(auth, RegistryAuth::Anonymous));
+    match auth {
+        RegistryAuth::Basic { username, password } => {
+            assert_eq!(username, "testuser");
+            assert_eq!(password, "testpass");
+        }
+        _ => panic!("Expected Basic auth for test.registry.io, got: {:?}", auth),
+    }
 
     // Restore env vars
     if let Some(val) = old_docker_config {
@@ -158,10 +163,14 @@ fn test_resolve_auth_bearer_token() -> Result<()> {
     env::remove_var("XDG_RUNTIME_DIR");
     env::set_var("HOME", tmp_dir.path());
 
-    // TODO: Implement actual credential resolution from Docker config
-    // For now, should resolve to anonymous auth
+    // Should resolve bearer token from config
     let auth = resolve_auth("ghcr.io/user/image")?;
-    assert!(matches!(auth, RegistryAuth::Anonymous));
+    match auth {
+        RegistryAuth::Bearer { token } => {
+            assert_eq!(token, "test-bearer-token");
+        }
+        _ => panic!("Expected Bearer token auth for ghcr.io, got: {:?}", auth),
+    }
 
     // Restore env vars
     if let Some(val) = old_docker_config {

@@ -31,16 +31,25 @@ fn test_auth_integration_with_docker_config() -> Result<()> {
     // Set HOME to temp directory
     std::env::set_var("HOME", temp_dir.path());
 
-    // TODO: Implement actual credential resolution from Docker config
-    // For now, all auth resolves to anonymous until we implement the actual credential logic
-
-    // Test GitHub Container Registry auth (currently returns anonymous)
+    // Test GitHub Container Registry auth (should resolve from config)
     let ghcr_auth = resolve_auth("ghcr.io/user/image:tag")?;
-    assert!(matches!(ghcr_auth, RegistryAuth::Anonymous));
+    match ghcr_auth {
+        RegistryAuth::Basic { username, password } => {
+            assert_eq!(username, "test");
+            assert_eq!(password, "test123");
+        }
+        _ => panic!("Expected Basic auth for ghcr.io, got: {:?}", ghcr_auth),
+    }
 
-    // Test Docker Hub auth (currently returns anonymous)
+    // Test Docker Hub auth (should resolve from config)
     let docker_auth = resolve_auth("docker.io/library/ubuntu:latest")?;
-    assert!(matches!(docker_auth, RegistryAuth::Anonymous));
+    match docker_auth {
+        RegistryAuth::Basic { username, password } => {
+            assert_eq!(username, "testuser");
+            assert_eq!(password, "testpass");
+        }
+        _ => panic!("Expected Basic auth for docker.io, got: {:?}", docker_auth),
+    }
 
     // Test unknown registry returns anonymous
     let unknown_auth = resolve_auth("unknown.registry.io/image:tag")?;
