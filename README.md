@@ -135,8 +135,20 @@ krust build
 ### Build with custom cargo arguments
 
 ```bash
+# Build with features
 krust build -- --features=prod
+
+# Build an example binary
+krust build -- --example http_server
+
+# Build a specific binary target
+krust build -- --bin my-app
+
+# Combine multiple flags
+krust build -- --example server --features=tls
 ```
+
+When building examples or specific binaries, krust automatically detects the correct binary name and path from the cargo arguments.
 
 ## Supported Platforms
 

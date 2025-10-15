@@ -1,0 +1,26 @@
+# Test building examples with --example flag
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Hello from main!");
+}
+
+-- examples/example_server.rs --
+fn main() {
+    println!("Hello from example!");
+}
+
+# Build the example binary
+[linux] env KRUST_REPO=ttl.sh/test exec ./krust build --no-push --platform linux/amd64 . -- --example example_server
+[darwin] env KRUST_REPO=ttl.sh/test exec ./krust build --no-push --platform linux/amd64 . -- --example example_server
+stderr 'Building Rust project'
+stderr 'Successfully built binary'
+stderr 'examples/example_server'
+stderr 'Successfully built image'
