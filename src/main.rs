@@ -5,12 +5,13 @@ use krust::{
     builder::{get_rust_target_triple, RustBuilder},
     cli::{Cli, Commands},
     config::Config,
+    constants,
     image::ImageBuilder,
     manifest::{ManifestDescriptor, Platform},
     registry::RegistryClient,
 };
 use std::path::{Path, PathBuf};
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -87,7 +88,7 @@ async fn main() -> Result<()> {
                     Ok(detected_platforms) => {
                         if detected_platforms.is_empty() {
                             info!("No platforms detected, using defaults");
-                            vec!["linux/amd64".to_string(), "linux/arm64".to_string()]
+                            vec![constants::platform::LINUX_AMD64.to_string(), constants::platform::LINUX_ARM64.to_string()]
                         } else {
                             info!("Detected platforms: {:?}", detected_platforms);
                             detected_platforms
@@ -95,7 +96,7 @@ async fn main() -> Result<()> {
                     }
                     Err(e) => {
                         info!("Failed to detect platforms: {}. Using defaults.", e);
-                        vec!["linux/amd64".to_string(), "linux/arm64".to_string()]
+                        vec![constants::platform::LINUX_AMD64.to_string(), constants::platform::LINUX_ARM64.to_string()]
                     }
                 }
             };
@@ -217,11 +218,6 @@ async fn main() -> Result<()> {
                 );
                 info!("Skipping push (--no-push specified)");
             }
-        }
-        Commands::Push { image } => {
-            let _ = image;
-            error!("Push command not yet implemented");
-            std::process::exit(1);
         }
         Commands::Version => {
             println!("krust {}", env!("CARGO_PKG_VERSION"));

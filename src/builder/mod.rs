@@ -187,15 +187,17 @@ impl RustBuilder {
 }
 
 pub fn get_rust_target_triple(platform: &str) -> Result<String> {
+    use crate::constants::platform;
+    
     match platform {
-        "linux/amd64" => Ok("x86_64-unknown-linux-musl".to_string()),
-        "linux/arm64" => Ok("aarch64-unknown-linux-musl".to_string()),
-        "linux/arm/v7" => Ok("armv7-unknown-linux-musleabihf".to_string()),
-        "linux/arm/v6" => Ok("arm-unknown-linux-musleabihf".to_string()),
-        "linux/386" => Ok("i686-unknown-linux-musl".to_string()),
-        "linux/ppc64le" => Ok("powerpc64le-unknown-linux-musl".to_string()),
-        "linux/s390x" => Ok("s390x-unknown-linux-musl".to_string()),
-        "linux/riscv64" => Ok("riscv64gc-unknown-linux-musl".to_string()),
+        platform::LINUX_AMD64 => Ok("x86_64-unknown-linux-musl".to_string()),
+        platform::LINUX_ARM64 => Ok("aarch64-unknown-linux-musl".to_string()),
+        platform::LINUX_ARM_V7 => Ok("armv7-unknown-linux-musleabihf".to_string()),
+        platform::LINUX_ARM_V6 => Ok("arm-unknown-linux-musleabihf".to_string()),
+        platform::LINUX_386 => Ok("i686-unknown-linux-musl".to_string()),
+        platform::LINUX_PPC64LE => Ok("powerpc64le-unknown-linux-musl".to_string()),
+        platform::LINUX_S390X => Ok("s390x-unknown-linux-musl".to_string()),
+        platform::LINUX_RISCV64 => Ok("riscv64gc-unknown-linux-musl".to_string()),
         _ => anyhow::bail!("Unsupported platform: {}", platform),
     }
 }

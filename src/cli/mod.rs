@@ -47,12 +47,6 @@ pub enum Commands {
         cargo_args: Vec<String>,
     },
 
-    /// Push a built image to a container registry
-    Push {
-        /// Image reference to push
-        image: String,
-    },
-
     /// Show version information
     Version,
 }

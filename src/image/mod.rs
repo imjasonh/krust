@@ -68,7 +68,6 @@ pub struct Descriptor {
 
 pub struct ImageBuilder {
     binary_path: PathBuf,
-    #[allow(dead_code)]
     base_image: String,
     platform: String,
 }
@@ -271,7 +270,7 @@ mod tests {
                 ],
                 cmd: None,
                 working_dir: "/".to_string(),
-                user: "nonroot:nonroot".to_string(),
+                user: crate::constants::user::NONROOT.to_string(),
             },
             rootfs: RootFs {
                 fs_type: "layers".to_string(),
@@ -302,7 +301,7 @@ mod tests {
         let builder = ImageBuilder::new(
             PathBuf::from("/tmp/test"),
             "test-base".to_string(),
-            "linux/amd64".to_string(),
+            crate::constants::platform::LINUX_AMD64.to_string(),
         );
 
         let (os, arch) = builder.parse_platform().unwrap();
@@ -316,7 +315,7 @@ mod tests {
         let builder = ImageBuilder::new(
             binary_path,
             "test-base".to_string(),
-            "linux/amd64".to_string(),
+            crate::constants::platform::LINUX_AMD64.to_string(),
         );
 
         let base_config = create_base_image_config();
@@ -337,7 +336,7 @@ mod tests {
         assert_eq!(result.config.working_dir, "/");
 
         // Check that user is preserved
-        assert_eq!(result.config.user, "nonroot:nonroot");
+        assert_eq!(result.config.user, crate::constants::user::NONROOT);
 
         // Check that architecture and OS are preserved
         assert_eq!(result.architecture, "amd64");
@@ -350,7 +349,7 @@ mod tests {
         let builder = ImageBuilder::new(
             binary_path,
             "test-base".to_string(),
-            "linux/amd64".to_string(),
+            crate::constants::platform::LINUX_AMD64.to_string(),
         );
 
         let base_config = create_base_image_config();
@@ -373,7 +372,7 @@ mod tests {
         let builder = ImageBuilder::new(
             binary_path,
             "test-base".to_string(),
-            "linux/amd64".to_string(),
+            crate::constants::platform::LINUX_AMD64.to_string(),
         );
 
         let base_config = create_base_image_config();
@@ -420,7 +419,7 @@ mod tests {
         assert_eq!(parsed.os, "linux");
         assert_eq!(parsed.config.env.len(), 2);
         assert_eq!(parsed.config.working_dir, "/");
-        assert_eq!(parsed.config.user, "nonroot:nonroot");
+        assert_eq!(parsed.config.user, crate::constants::user::NONROOT);
         assert_eq!(parsed.rootfs.diff_ids.len(), 1);
         assert_eq!(parsed.history.len(), 0); // Default empty for missing field
     }

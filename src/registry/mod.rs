@@ -177,7 +177,7 @@ impl ImageReference {
             format!(
                 "{}:{}",
                 self.repository_url(),
-                self.tag.as_deref().unwrap_or("latest")
+                self.tag.as_deref().unwrap_or(crate::constants::tag::DEFAULT)
             )
         }
     }
@@ -418,7 +418,7 @@ impl RegistryClient {
         let manifest_ref = if let Some(digest) = &reference.digest {
             digest.clone()
         } else {
-            reference.tag.as_deref().unwrap_or("latest").to_string()
+            reference.tag.as_deref().unwrap_or(crate::constants::tag::DEFAULT).to_string()
         };
 
         let url = format!(
@@ -687,7 +687,7 @@ impl RegistryClient {
             .authenticate(&reference.registry, &reference.repository, auth)
             .await?;
 
-        let manifest_ref = reference.tag.as_deref().unwrap_or("latest");
+        let manifest_ref = reference.tag.as_deref().unwrap_or(crate::constants::tag::DEFAULT);
         let url = format!(
             "https://{}/v2/{}/manifests/{}",
             reference.registry, reference.repository, manifest_ref
@@ -809,7 +809,7 @@ impl RegistryClient {
     ) -> Result<Vec<String>> {
         // For now, return default platforms - this would need to be enhanced
         // to actually fetch and parse image indexes
-        Ok(vec!["linux/amd64".to_string(), "linux/arm64".to_string()])
+        Ok(vec![crate::constants::platform::LINUX_AMD64.to_string(), crate::constants::platform::LINUX_ARM64.to_string()])
     }
 
     /// Push a layered image where only the top layer is new
@@ -971,7 +971,7 @@ impl RegistryClient {
 
         // Serialize and push as manifest
         let manifest_json = serde_json::to_vec_pretty(&oci_index)?;
-        let manifest_ref = reference.tag.as_deref().unwrap_or("latest");
+        let manifest_ref = reference.tag.as_deref().unwrap_or(crate::constants::tag::DEFAULT);
         let url = format!(
             "https://{}/v2/{}/manifests/{}",
             reference.registry, reference.repository, manifest_ref
@@ -1013,7 +1013,7 @@ impl RegistryClient {
 
 pub fn parse_image_reference(image: &str) -> Result<(String, String, String)> {
     let reference = ImageReference::parse(image)?;
-    let tag = reference.tag.as_deref().unwrap_or("latest").to_string();
+    let tag = reference.tag.as_deref().unwrap_or(crate::constants::tag::DEFAULT).to_string();
     Ok((reference.registry, reference.repository, tag))
 }
 
