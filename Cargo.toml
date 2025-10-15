@@ -35,6 +35,7 @@ base64 = "0.22"
 tempfile = "3.9"
 assert_cmd = "2.0"
 predicates = "3.0"
+testscript-rs = "0.2"
 
 [[example]]
 name = "auto_auth_demo"

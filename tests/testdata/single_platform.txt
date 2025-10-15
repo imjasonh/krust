@@ -1,0 +1,22 @@
+# Test single platform build
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Hello, world!");
+}
+
+# Build for single platform
+[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/single:latest .
+[linux] stderr 'Building for platform: linux/amd64'
+[linux] stderr 'Successfully built image for 1 platform'
+
+[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/single:latest .
+[darwin] stderr 'Building for platform: linux/amd64'
+[darwin] stderr 'Successfully built image for 1 platform'

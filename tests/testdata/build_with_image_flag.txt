@@ -1,0 +1,19 @@
+# Test build with --image flag
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Hello, world!");
+}
+
+# Build with --image flag should succeed
+[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/myapp:v1 .
+[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/myapp:v1 .
+stderr 'Building Rust project'
+stderr 'Successfully built image'

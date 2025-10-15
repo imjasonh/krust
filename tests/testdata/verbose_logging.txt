@@ -1,0 +1,18 @@
+# Test verbose logging with --verbose flag
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Hello, world!");
+}
+
+# Build with --verbose should show DEBUG logs
+[linux] exec ./krust --verbose build --no-push --platform linux/amd64 --image test.local/myapp:latest .
+[darwin] exec ./krust --verbose build --no-push --platform linux/amd64 --image test.local/myapp:latest .
+stderr 'DEBUG'

@@ -1,0 +1,19 @@
+# Test platform detection from base image
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Hello, world!");
+}
+
+# Build without explicit platform - should detect from base image
+env RUST_LOG=info
+exec ./krust build --no-push --image test.local/detection:latest .
+stderr 'Detecting available platforms'
+stderr 'Detected platforms'

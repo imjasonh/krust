@@ -1,0 +1,20 @@
+# Test that stdout is clean for command substitution when using --no-push
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Hello, world!");
+}
+
+# With --no-push, stdout should be empty
+[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/clean:latest .
+[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/clean:latest .
+! stdout .
+stderr 'Building Rust project'
+stderr 'Successfully built image'
