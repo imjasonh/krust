@@ -188,7 +188,7 @@ impl RustBuilder {
 
 pub fn get_rust_target_triple(platform: &str) -> Result<String> {
     use crate::constants::platform;
-    
+
     match platform {
         platform::LINUX_AMD64 => Ok("x86_64-unknown-linux-musl".to_string()),
         platform::LINUX_ARM64 => Ok("aarch64-unknown-linux-musl".to_string()),

@@ -88,7 +88,10 @@ async fn main() -> Result<()> {
                     Ok(detected_platforms) => {
                         if detected_platforms.is_empty() {
                             info!("No platforms detected, using defaults");
-                            vec![constants::platform::LINUX_AMD64.to_string(), constants::platform::LINUX_ARM64.to_string()]
+                            vec![
+                                constants::platform::LINUX_AMD64.to_string(),
+                                constants::platform::LINUX_ARM64.to_string(),
+                            ]
                         } else {
                             info!("Detected platforms: {:?}", detected_platforms);
                             detected_platforms
@@ -96,7 +99,10 @@ async fn main() -> Result<()> {
                     }
                     Err(e) => {
                         info!("Failed to detect platforms: {}. Using defaults.", e);
-                        vec![constants::platform::LINUX_AMD64.to_string(), constants::platform::LINUX_ARM64.to_string()]
+                        vec![
+                            constants::platform::LINUX_AMD64.to_string(),
+                            constants::platform::LINUX_ARM64.to_string(),
+                        ]
                     }
                 }
             };
