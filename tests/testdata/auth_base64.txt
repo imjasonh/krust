@@ -29,6 +29,6 @@ env HOME=$WORK
 env RUST_LOG=debug
 
 # Try to build (will fail at registry, but auth should be resolved)
-! exec ./krust build --platform linux/amd64 --image ghcr.io/user/app:latest .
+! exec ./krust build --platform linux/amd64 .
 stderr 'Resolving auth'
 stderr 'ghcr.io'

@@ -13,7 +13,6 @@ fn main() {
 }
 
 # Build with KRUST_REPO should succeed
-env KRUST_REPO=test.local
 [linux] exec ./krust build --no-push --platform linux/amd64 .
 [darwin] exec ./krust build --no-push --platform linux/amd64 .
 stderr 'Building Rust project'

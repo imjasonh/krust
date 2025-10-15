@@ -4,7 +4,7 @@ repos:
     hooks:
       - id: rustfmt
         name: rustfmt
-        entry: make check-fmt
+        entry: make fmt
         language: system
         types: [rust]
         pass_filenames: false

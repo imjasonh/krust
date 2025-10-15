@@ -12,6 +12,6 @@ fn main() {
     println!("Hello, world!");
 }
 
-# Build without KRUST_REPO or --image should fail
+# Build without KRUST_REPO should fail
 ! exec ./krust build --no-push .
-stderr 'Either --image or KRUST_REPO must be set'
+stderr 'KRUST_REPO must be set'

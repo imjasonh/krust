@@ -13,8 +13,8 @@ fn main() {
 }
 
 # With --no-push, stdout should be empty
-[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/clean:latest .
-[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/clean:latest .
+[linux] exec ./krust build --no-push --platform linux/amd64 .
+[darwin] exec ./krust build --no-push --platform linux/amd64 .
 ! stdout .
 stderr 'Building Rust project'
 stderr 'Successfully built image'

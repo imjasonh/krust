@@ -14,7 +14,7 @@ fn main() {
 
 # When platform is explicit, no detection should happen
 env RUST_LOG=info
-[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/explicit:latest .
-[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/explicit:latest .
+[linux] exec ./krust build --no-push --platform linux/amd64 .
+[darwin] exec ./krust build --no-push --platform linux/amd64 .
 ! stderr 'Detecting available platforms'
 stderr 'Building for platform: linux/amd64'

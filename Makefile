@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-e2e build run clean fmt lint check-fmt check test-verbose setup-cross-compile verify-cross-compile
+.PHONY: test test-unit test-e2e test-testscript build run clean fmt lint check-fmt check install setup-cross-compile verify-cross-compile
 
 # Test flags - run single-threaded to avoid env var races
 TEST_FLAGS := -- --test-threads=1
@@ -59,6 +59,19 @@ test-unit:
 # Run e2e tests only
 test-e2e:
 	cargo test --verbose --test '*' $(TEST_FLAGS)
+
+# Run testscript tests only
+test-testscript:
+	cargo test --verbose --test testscript_test
+
+# Install krust to ~/.local/bin
+install:
+	@echo "Building krust in release mode..."
+	@cargo build --release
+	@mkdir -p ~/.local/bin
+	@cp target/release/krust ~/.local/bin/krust
+	@echo "Installed krust to ~/.local/bin/krust"
+	@echo "Make sure ~/.local/bin is in your PATH"
 
 # Clean build artifacts
 clean:

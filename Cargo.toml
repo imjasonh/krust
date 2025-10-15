@@ -19,10 +19,7 @@ sha256 = "1.5"
 chrono = "0.4"
 tar = "0.4"
 flate2 = "1.0"
-hyper = { version = "1.0", features = ["full"] }
-hyper-util = { version = "0.1", features = ["full"] }
-http-body-util = "0.1"
-hyper-tls = "0.6"
+reqwest = { version = "0.12", features = ["json", "stream"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dirs = "6.0"
@@ -36,7 +33,3 @@ tempfile = "3.9"
 assert_cmd = "2.0"
 predicates = "3.0"
 testscript-rs = "0.2"
-
-[[example]]
-name = "auto_auth_demo"
-path = "examples/auto_auth_demo.rs"

@@ -57,6 +57,34 @@ krust pushes images by default (use `--no-push` to skip) because:
    - Then push manifest referencing those blobs
    - Manifest URL contains the final digest
 
+### Google Artifact Registry (GAR) Blob Uploads
+
+GAR has special handling for blob uploads that differs from the standard OCI spec:
+
+1. **Location Header Format**:
+   - POST to `/v2/.../blobs/uploads/` returns `location: /artifacts-uploads/...`
+   - The location is a relative path starting with `/artifacts-uploads/`, NOT `/v2/`
+   - Must build absolute URL as `https://{registry}{location}` for ANY path starting with `/`
+
+2. **Upload Flow** (Resumable):
+   - **Monolithic upload not supported**: PUT with body to `location?digest=` returns `301 Moved Permanently`
+   - Must use resumable upload flow instead:
+     1. POST to `/v2/.../blobs/uploads/` → get upload location
+     2. PATCH to upload location with blob data → returns `202 Accepted`
+     3. PUT to finalize location with `?digest=` and empty body → returns `201 Created`
+
+3. **Critical Implementation Details**:
+   - GAR returns `301` redirect on monolithic PUT attempts (not `307`)
+   - HTTP spec says `301` means don't resend body, so automatic redirect following fails
+   - Must explicitly handle `301` as a signal to switch to resumable upload
+   - PATCH response may include a new `location` header for the finalize PUT
+   - Use `reqwest` with `redirect::Policy::none()` to handle redirects manually
+
+4. **Why reqwest over hyper**:
+   - Initially used raw `hyper` but it doesn't auto-follow redirects with request bodies
+   - Switched to `reqwest` for cleaner API and better redirect handling
+   - Disabled automatic redirects to manually handle GAR's upload flow
+
 ### Cross-Compilation on macOS
 
 For Linux targets from macOS, you need:
@@ -100,7 +128,7 @@ src/
 Key crates chosen:
 - `clap` - CLI parsing with derive macros
 - `tokio` - Async runtime for registry operations
-- `oci-distribution` - OCI registry client
+- `reqwest` - HTTP client with automatic redirect handling
 - `tar` + `flate2` - Layer creation
 - `sha256` - Digest calculation
 - `tracing` - Structured logging
@@ -124,19 +152,24 @@ The iterative development process:
 ## Future Improvements
 
 Potential enhancements identified:
-1. Registry authentication support
+1. ~~Registry authentication support~~ ✓ Implemented (supports Docker credential helpers)
 2. Multi-platform image manifests
 3. Build caching
 4. Image layer optimization
 5. Support for custom Dockerfile-like configs
 6. SBOM (Software Bill of Materials) generation
+7. Optimize blob uploads (check if blob exists before uploading)
 
 ## Useful Commands
 
 ```bash
-# Test the full workflow
+# Test with anonymous registry (ttl.sh)
 export KRUST_REPO=ttl.sh/test
 docker run $(krust build example/hello-krust)
+
+# Test with Google Artifact Registry
+export KRUST_REPO=us-central1-docker.pkg.dev/project-id/repo-name
+krust build example/hello-krust
 
 # Debug output
 krust build -v 2>&1 | less
@@ -144,6 +177,9 @@ krust build -v 2>&1 | less
 # Check static linking
 file target/x86_64-unknown-linux-musl/release/binary
 ldd target/x86_64-unknown-linux-musl/release/binary  # should say "not a dynamic executable"
+
+# Verify pushed image
+crane manifest $(krust build --no-push example/hello-krust)
 ```
 
 ## Resources

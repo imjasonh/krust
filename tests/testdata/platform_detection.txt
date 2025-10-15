@@ -14,6 +14,6 @@ fn main() {
 
 # Build without explicit platform - should detect from base image
 env RUST_LOG=info
-exec ./krust build --no-push --image test.local/detection:latest .
+exec ./krust build --no-push .
 stderr 'Detecting available platforms'
 stderr 'Detected platforms'

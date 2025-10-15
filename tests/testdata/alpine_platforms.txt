@@ -17,6 +17,6 @@ fn main() {
 
 # Build with Alpine base - should detect many platforms
 env RUST_LOG=info
-exec ./krust build --no-push --image test.local/alpine:latest .
+exec ./krust build --no-push .
 stderr 'Detecting available platforms from base image: alpine:latest'
 stderr 'platforms'
