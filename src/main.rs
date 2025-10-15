@@ -91,91 +91,120 @@ async fn main() -> Result<()> {
                 }
             };
 
-            // Build for each platform
-            let mut manifest_descriptors = Vec::new();
+            // Build for each platform concurrently
+            let mut tasks = Vec::new();
 
-            for platform_str in &platforms {
-                info!("Building for platform: {}", platform_str);
+            for platform_str in platforms.clone() {
+                let project_path = project_path.clone();
+                let base_image = base_image.clone();
+                let target_repo = target_repo.clone();
+                let cargo_args = cargo_args.clone();
+                let no_push_flag = no_push;
 
-                // Build the Rust binary for this platform
-                let target = get_rust_target_triple(platform_str)?;
-                let builder =
-                    RustBuilder::new(&project_path, &target).with_cargo_args(cargo_args.clone());
+                let task = tokio::spawn(async move {
+                    info!("Building for platform: {}", platform_str);
 
-                let build_result = builder.build()?;
+                    // Build the Rust binary for this platform
+                    let target = get_rust_target_triple(&platform_str)?;
+                    let builder =
+                        RustBuilder::new(&project_path, &target).with_cargo_args(cargo_args);
 
-                // Build container image for this platform
-                let image_builder = ImageBuilder::new(
-                    build_result.binary_path,
-                    base_image.clone(),
-                    platform_str.clone(),
-                );
+                    let build_result = builder.build()?;
 
-                // Always use layered approach - registry layer will handle cross-registry blob copying
-                let base_auth = resolve_auth(&base_image)?;
-                let (config_data, layer_data, manifest) = image_builder
-                    .build(&mut registry_client, &base_auth)
-                    .await?;
+                    // Build container image for this platform
+                    let image_builder = ImageBuilder::new(
+                        build_result.binary_path,
+                        base_image.clone(),
+                        platform_str.clone(),
+                    );
 
-                // Push platform-specific image if not --no-push
-                if !no_push {
-                    info!("Pushing image for platform: {}", platform_str);
+                    // Create a registry client for this task
+                    let mut registry_client = RegistryClient::new()?;
 
-                    // Get auth for the target registry
-                    let push_auth = resolve_auth(&target_repo)?;
-
-                    // Get the media type of the application layer (last layer in manifest)
-                    let app_layer_media_type = manifest
-                        .layers
-                        .last()
-                        .map(|l| l.media_type.clone())
-                        .unwrap_or_else(|| {
-                            "application/vnd.docker.image.rootfs.diff.tar.gzip".to_string()
-                        });
-
-                    // Push layered image by digest only (no tag)
-                    // This will be referenced by digest in the final manifest list
-                    let (digest_ref, manifest_size) = registry_client
-                        .push_layered_image(
-                            &target_repo,
-                            config_data,
-                            layer_data,
-                            app_layer_media_type,
-                            &manifest,
-                            &push_auth,
-                            &base_image,
-                            &base_auth,
-                        )
+                    // Always use layered approach - registry layer will handle cross-registry blob copying
+                    let base_auth = resolve_auth(&base_image)?;
+                    let (config_data, layer_data, manifest) = image_builder
+                        .build(&mut registry_client, &base_auth)
                         .await?;
 
-                    // Parse platform string
-                    let parts: Vec<&str> = platform_str.split('/').collect();
-                    let (os, arch) = if parts.len() >= 2 {
-                        (parts[0].to_string(), parts[1].to_string())
+                    // Push platform-specific image if not --no-push
+                    let manifest_descriptor = if !no_push_flag {
+                        info!("Pushing image for platform: {}", platform_str);
+
+                        // Get auth for the target registry
+                        let push_auth = resolve_auth(&target_repo)?;
+
+                        // Get the media type of the application layer (last layer in manifest)
+                        let app_layer_media_type = manifest
+                            .layers
+                            .last()
+                            .map(|l| l.media_type.clone())
+                            .unwrap_or_else(|| {
+                                "application/vnd.docker.image.rootfs.diff.tar.gzip".to_string()
+                            });
+
+                        // Push layered image by digest only (no tag)
+                        // This will be referenced by digest in the final manifest list
+                        let (digest_ref, manifest_size) = registry_client
+                            .push_layered_image(
+                                &target_repo,
+                                config_data,
+                                layer_data,
+                                app_layer_media_type,
+                                &manifest,
+                                &push_auth,
+                                &base_image,
+                                &base_auth,
+                            )
+                            .await?;
+
+                        // Parse platform string
+                        let parts: Vec<&str> = platform_str.split('/').collect();
+                        let (os, arch) = if parts.len() >= 2 {
+                            (parts[0].to_string(), parts[1].to_string())
+                        } else {
+                            return Err(anyhow::anyhow!(
+                                "Invalid platform format: {}",
+                                platform_str
+                            ));
+                        };
+
+                        // Extract just the digest from the full reference
+                        let digest = digest_ref.split('@').next_back().unwrap_or("").to_string();
+
+                        info!("Pushed platform image to: {}", digest_ref);
+
+                        // Return manifest descriptor
+                        info!(
+                            "Adding manifest to list - platform: {}/{}, digest: {}, size: {}",
+                            os, arch, digest, manifest_size
+                        );
+                        Some(ManifestDescriptor {
+                            media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
+                            size: manifest_size as i64,
+                            digest,
+                            platform: Platform {
+                                architecture: arch,
+                                os,
+                                variant: None,
+                            },
+                        })
                     } else {
-                        return Err(anyhow::anyhow!("Invalid platform format: {}", platform_str));
+                        None
                     };
 
-                    // Extract just the digest from the full reference
-                    let digest = digest_ref.split('@').next_back().unwrap_or("").to_string();
+                    Ok::<_, anyhow::Error>(manifest_descriptor)
+                });
 
-                    info!("Pushed platform image to: {}", digest_ref);
+                tasks.push(task);
+            }
 
-                    // Add to manifest list
-                    info!(
-                        "Adding manifest to list - platform: {}/{}, digest: {}, size: {}",
-                        os, arch, digest, manifest_size
-                    );
-                    manifest_descriptors.push(ManifestDescriptor {
-                        media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
-                        size: manifest_size as i64,
-                        digest,
-                        platform: Platform {
-                            architecture: arch,
-                            os,
-                            variant: None,
-                        },
-                    });
+            // Wait for all builds to complete
+            let mut manifest_descriptors = Vec::new();
+            for task in tasks {
+                let result = task.await.context("Build task panicked")??;
+                if let Some(descriptor) = result {
+                    manifest_descriptors.push(descriptor);
                 }
             }
 
