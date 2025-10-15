@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
 const KRUST_PREFIX: &str = "krust://";
 
@@ -10,28 +10,29 @@ pub fn find_krust_references(yaml_content: &str) -> Result<HashSet<String>> {
     let mut references = HashSet::new();
 
     // Parse YAML documents (handle multiple --- separated docs)
-    for doc in serde_yml::Deserializer::from_str(yaml_content) {
-        let value = serde_yml::Value::deserialize(doc)?;
-        find_references_in_value(&value, &mut references);
+    let docs = YamlLoader::load_from_str(yaml_content)?;
+
+    for doc in &docs {
+        find_references_in_value(doc, &mut references);
     }
 
     Ok(references)
 }
 
 /// Recursively search for krust:// references in a YAML value
-fn find_references_in_value(value: &serde_yml::Value, references: &mut HashSet<String>) {
+fn find_references_in_value(value: &Yaml, references: &mut HashSet<String>) {
     match value {
-        serde_yml::Value::String(s) => {
+        Yaml::String(s) => {
             if let Some(path) = s.strip_prefix(KRUST_PREFIX) {
                 references.insert(path.to_string());
             }
         }
-        serde_yml::Value::Sequence(seq) => {
+        Yaml::Array(seq) => {
             for item in seq {
                 find_references_in_value(item, references);
             }
         }
-        serde_yml::Value::Mapping(map) => {
+        Yaml::Hash(map) => {
             for (_key, val) in map {
                 find_references_in_value(val, references);
             }
@@ -48,42 +49,42 @@ pub fn replace_krust_references(
     let mut result = Vec::new();
 
     // Parse and process each YAML document
-    let docs: Vec<serde_yml::Value> = serde_yml::Deserializer::from_str(yaml_content)
-        .map(serde_yml::Value::deserialize)
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut docs = YamlLoader::load_from_str(yaml_content)?;
 
-    for (i, mut value) in docs.into_iter().enumerate() {
-        replace_in_value(&mut value, replacements);
+    for (i, doc) in docs.iter_mut().enumerate() {
+        replace_in_value(doc, replacements);
 
         // Serialize back to YAML
-        let yaml_str = serde_yml::to_string(&value)?;
+        let mut out_str = String::new();
+        let mut emitter = YamlEmitter::new(&mut out_str);
+        emitter.dump(doc)?;
 
         // Add document separator if not the first document
         if i > 0 {
             result.push("---\n".to_string());
         }
-        result.push(yaml_str);
+        result.push(out_str);
     }
 
     Ok(result.join(""))
 }
 
 /// Recursively replace krust:// references in a YAML value
-fn replace_in_value(value: &mut serde_yml::Value, replacements: &HashMap<String, String>) {
+fn replace_in_value(value: &mut Yaml, replacements: &HashMap<String, String>) {
     match value {
-        serde_yml::Value::String(s) => {
+        Yaml::String(s) => {
             if let Some(path) = s.strip_prefix(KRUST_PREFIX) {
                 if let Some(replacement) = replacements.get(path) {
                     *s = replacement.clone();
                 }
             }
         }
-        serde_yml::Value::Sequence(seq) => {
+        Yaml::Array(seq) => {
             for item in seq {
                 replace_in_value(item, replacements);
             }
         }
-        serde_yml::Value::Mapping(map) => {
+        Yaml::Hash(map) => {
             for (_key, val) in map {
                 replace_in_value(val, replacements);
             }
