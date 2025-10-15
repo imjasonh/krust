@@ -1,6 +1,6 @@
 [package]
 name = "krust"
-version = "0.0.3"
+version = "0.0.1"
 edition = "2021"
 authors = ["Jason Hall <imjasonh@gmail.com>"]
 description = "A container image build tool for Rust applications"
