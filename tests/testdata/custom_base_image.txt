@@ -1,0 +1,23 @@
+# Test build with custom base image
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[package.metadata.krust]
+base-image = "alpine:latest"
+-- src/main.rs --
+fn main() {
+    println!("Hello from Alpine!");
+}
+
+# Build with custom base image
+[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/alpine-app:latest .
+[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/alpine-app:latest .
+stderr 'Building Rust project'
+stderr 'base-image.*alpine'
+stderr 'Successfully built image'

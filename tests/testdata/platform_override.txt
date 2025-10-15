@@ -1,0 +1,20 @@
+# Test that explicit platform overrides base image detection
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Hello, world!");
+}
+
+# When platform is explicit, no detection should happen
+env RUST_LOG=info
+[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/explicit:latest .
+[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/explicit:latest .
+! stderr 'Detecting available platforms'
+stderr 'Building for platform: linux/amd64'

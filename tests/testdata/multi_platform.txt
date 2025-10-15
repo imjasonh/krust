@@ -1,0 +1,23 @@
+# Test multi-platform build
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Hello, world!");
+}
+
+# Build for multiple platforms
+# Note: This may fail if toolchains aren't installed, which is expected
+[linux] exec ./krust build --no-push --platform linux/amd64,linux/arm64 --image test.local/multi:latest .
+[linux] stderr 'Building for platform: linux/amd64'
+[linux] stderr 'Building for platform: linux/arm64'
+
+[darwin] exec ./krust build --no-push --platform linux/amd64,linux/arm64 --image test.local/multi:latest .
+[darwin] stderr 'Building for platform: linux/amd64'
+[darwin] stderr 'Building for platform: linux/arm64'

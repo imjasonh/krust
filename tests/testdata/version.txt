@@ -1,0 +1,9 @@
+# Test version command variants
+
+# Test --version flag
+exec ./krust --version
+stdout 'krust 0.1.0'
+
+# Test version subcommand
+exec ./krust version
+stdout 'krust 0.1.0'

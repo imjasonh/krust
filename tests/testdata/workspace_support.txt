@@ -1,0 +1,23 @@
+# Test that workspace member can be built
+
+-- Cargo.toml --
+[workspace]
+members = ["app"]
+
+-- app/Cargo.toml --
+[package]
+name = "myapp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- app/src/main.rs --
+fn main() {
+    println!("Hello from workspace!");
+}
+
+# Build workspace member by specifying its directory
+[linux] exec ./krust build --no-push --platform linux/amd64 --image test.local/workspace:latest app
+[darwin] exec ./krust build --no-push --platform linux/amd64 --image test.local/workspace:latest app
+stderr 'Building Rust project'
+stderr 'Successfully built image'

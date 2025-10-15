@@ -1,0 +1,22 @@
+# Test Alpine base image platform detection
+
+-- Cargo.toml --
+[package]
+name = "test-alpine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[package.metadata.krust]
+base-image = "alpine:latest"
+-- src/main.rs --
+fn main() {
+    println!("Hello from Alpine!");
+}
+
+# Build with Alpine base - should detect many platforms
+env RUST_LOG=info
+exec ./krust build --no-push --image test.local/alpine:latest .
+stderr 'Detecting available platforms from base image: alpine:latest'
+stderr 'platforms'

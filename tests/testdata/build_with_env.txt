@@ -1,0 +1,20 @@
+# Test build with KRUST_REPO environment variable
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+-- src/main.rs --
+fn main() {
+    println!("Hello, world!");
+}
+
+# Build with KRUST_REPO should succeed
+env KRUST_REPO=test.local
+[linux] exec ./krust build --no-push --platform linux/amd64 .
+[darwin] exec ./krust build --no-push --platform linux/amd64 .
+stderr 'Building Rust project'
+stderr 'Successfully built image'
