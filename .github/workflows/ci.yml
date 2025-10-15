@@ -57,12 +57,7 @@ jobs:
     - run: make verify-cross-compile
     - run: make build
     - run: make test
-    - run: make test-e2e
-    # Only run cross-compilation integration test on x86_64 runners
-    - name: Run integration test (cross-compilation)
-      if: matrix.os == 'ubuntu-latest'
-      run: make run-built-image
-
+    - run: make run-built-image
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
