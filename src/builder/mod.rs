@@ -142,10 +142,12 @@ impl RustBuilder {
         }
 
         let binary_name = self.get_binary_name()?;
-        let binary_path = target_dir
-            .join(&self.target)
-            .join("release")
-            .join(&binary_name);
+        let binary_subdir = self.get_binary_subdir();
+        let mut binary_path = target_dir.join(&self.target).join("release");
+        if let Some(subdir) = binary_subdir {
+            binary_path = binary_path.join(subdir);
+        }
+        binary_path = binary_path.join(&binary_name);
 
         // Sometimes cargo build completes but the binary isn't immediately visible
         // due to filesystem sync issues. Give it a moment.
@@ -169,6 +171,18 @@ impl RustBuilder {
     }
 
     fn get_binary_name(&self) -> Result<String> {
+        // Check if --example or --bin was specified
+        let mut i = 0;
+        while i < self.cargo_args.len() {
+            if (self.cargo_args[i] == "--example" || self.cargo_args[i] == "--bin")
+                && i + 1 < self.cargo_args.len()
+            {
+                return Ok(self.cargo_args[i + 1].clone());
+            }
+            i += 1;
+        }
+
+        // Fall back to package name
         let cargo_toml_path = self.project_path.join("Cargo.toml");
         let content =
             std::fs::read_to_string(&cargo_toml_path).context("Failed to read Cargo.toml")?;
@@ -183,6 +197,16 @@ impl RustBuilder {
             .context("Failed to get package name from Cargo.toml")?;
 
         Ok(name.to_string())
+    }
+
+    fn get_binary_subdir(&self) -> Option<&str> {
+        // Check if --example was specified (examples go in "examples/" subdir)
+        for (i, arg) in self.cargo_args.iter().enumerate() {
+            if arg == "--example" && i + 1 < self.cargo_args.len() {
+                return Some("examples");
+            }
+        }
+        None
     }
 }
 
