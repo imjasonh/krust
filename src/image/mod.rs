@@ -475,6 +475,9 @@ mod tests {
 
         // Clean up
         std::env::remove_var("SOURCE_DATE_EPOCH");
+    }
+
+    #[test]
     fn test_parse_platform_invalid_format() {
         let builder = ImageBuilder::new(
             PathBuf::from("/tmp/test"),
