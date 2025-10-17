@@ -154,6 +154,20 @@ The iterative development process:
 4. Fix issues discovered during real usage
 5. Refine UX based on actual workflows
 
+### Pre-commit Checks
+
+Before committing changes, always run:
+```bash
+make check-fmt  # Check code formatting
+make lint       # Run clippy linter
+make test       # Run all tests
+```
+
+Or run all checks at once:
+```bash
+make check  # Runs check-fmt, lint, and test
+```
+
 ## Features Implemented
 
 ### YAML Resolution (`krust resolve`)

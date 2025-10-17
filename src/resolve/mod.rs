@@ -308,7 +308,7 @@ spec:
 
         // Verify proper document separation
         assert!(result.contains("---"));
-        
+
         // Verify replacements happened
         assert!(result.contains("registry.io/repo@sha256:abc123"));
         assert!(!result.contains("krust://"));
