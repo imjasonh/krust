@@ -1,0 +1,78 @@
+# Test that multi-document YAML does not get corrupted with --- appended to values
+# Regression test for issue #59 where values like "blah" became "blah---"
+
+-- Cargo.toml --
+[package]
+name = "test-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+-- src/main.rs --
+fn main() {
+    println!("Hello from test-app!");
+}
+
+-- deployment.yaml --
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: blah
+  labels:
+    app: blah
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blah-config
+  namespace: blah
+data:
+  RUST_LOG: "info"
+  OTHER_VAR: "value"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blah
+  namespace: blah
+  labels:
+    app: blah
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: blah
+  template:
+    metadata:
+      labels:
+        app: blah
+    spec:
+      containers:
+      - name: blah
+        image: krust://.
+        imagePullPolicy: IfNotPresent
+
+# Resolve should not corrupt values by appending ---
+env KRUST_REPO=ttl.sh/test
+exec ./krust resolve -f deployment.yaml
+
+# Check that values are NOT corrupted with --- appended
+! stdout 'blah---'
+! stdout 'info---'
+! stdout 'value---'
+
+# Check that proper values are present
+stdout 'name: blah'
+stdout 'namespace: blah'
+stdout 'RUST_LOG: info'
+stdout 'OTHER_VAR: value'
+
+# Check that documents are properly separated
+stdout '---'
+
+# Check that the image was resolved
+stdout 'ttl.sh/test/test-app@sha256:'
+! stdout 'krust://'
+
+stderr 'Found 1 unique krust:// reference'
