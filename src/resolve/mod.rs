@@ -51,7 +51,7 @@ pub fn replace_krust_references(
     // Parse and process each YAML document
     let mut docs = YamlLoader::load_from_str(yaml_content)?;
 
-    for (i, doc) in docs.iter_mut().enumerate() {
+    for doc in docs.iter_mut() {
         replace_in_value(doc, replacements);
 
         // Serialize back to YAML
@@ -59,10 +59,12 @@ pub fn replace_krust_references(
         let mut emitter = YamlEmitter::new(&mut out_str);
         emitter.dump(doc)?;
 
-        // Add document separator if not the first document
-        if i > 0 {
-            result.push("---\n".to_string());
+        // Ensure the document ends with a newline before concatenation
+        // The emitter always adds --- at the start, so we don't need to add it manually
+        if !out_str.ends_with('\n') {
+            out_str.push('\n');
         }
+
         result.push(out_str);
     }
 
@@ -262,5 +264,58 @@ image: krust://./app2
         let result = replace_krust_references(yaml, &replacements).unwrap();
         // Should keep original reference if no replacement found
         assert!(result.contains("krust://./app"));
+    }
+
+    #[test]
+    fn test_multi_document_no_corruption() {
+        // Regression test for bug where multi-document YAML was being corrupted
+        // with "---" appended to string values like "blah---"
+        let yaml = r#"apiVersion: v1
+kind: Namespace
+metadata:
+  name: blah
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blah-config
+  namespace: blah
+data:
+  RUST_LOG: "info"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blah
+  namespace: blah
+spec:
+  containers:
+  - name: app
+    image: krust://."#;
+
+        let mut replacements = HashMap::new();
+        replacements.insert(
+            ".".to_string(),
+            "registry.io/repo@sha256:abc123".to_string(),
+        );
+
+        let result = replace_krust_references(yaml, &replacements).unwrap();
+
+        // Verify no corruption: string values should not have "---" appended
+        assert!(!result.contains("blah---"));
+        assert!(!result.contains("info---"));
+        assert!(!result.contains("blah-config---"));
+
+        // Verify proper document separation
+        assert!(result.contains("---"));
+
+        // Verify replacements happened
+        assert!(result.contains("registry.io/repo@sha256:abc123"));
+        assert!(!result.contains("krust://"));
+
+        // Verify the values are intact
+        assert!(result.contains("name: blah"));
+        assert!(result.contains("namespace: blah"));
+        assert!(result.contains("RUST_LOG: info"));
     }
 }
