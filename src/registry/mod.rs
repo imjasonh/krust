@@ -496,14 +496,17 @@ impl RegistryClient {
             anyhow::bail!("Failed to pull manifest: {}", response.status());
         }
 
-        let index_digest = response
+        let header_digest = response
             .headers()
             .get("docker-content-digest")
             .and_then(|h| h.to_str().ok())
-            .unwrap_or("")
-            .to_string();
+            .map(|s| s.to_string());
 
         let body = response.bytes().await?;
+
+        // Use header digest if available, otherwise compute from body
+        let index_digest =
+            header_digest.unwrap_or_else(|| format!("sha256:{}", sha256::digest(body.as_ref())));
         debug!("Manifest response body: {}", String::from_utf8_lossy(&body));
 
         // Try to parse as either image manifest or image index
@@ -540,13 +543,9 @@ impl RegistryClient {
         platform: Option<&str>,
     ) -> Result<(OciImageManifest, String)> {
         let selected = if let Some(platform_str) = platform {
-            // Parse the requested platform
-            let parts: Vec<&str> = platform_str.split('/').collect();
-            let (req_os, req_arch, req_variant) = match parts.len() {
-                2 => (parts[0], parts[1], None),
-                3 => (parts[0], parts[1], Some(parts[2])),
-                _ => anyhow::bail!("Invalid platform format: {}", platform_str),
-            };
+            // Parse the requested platform using the shared parser
+            let (req_os, req_arch, req_variant) =
+                crate::image::parse_platform_string(platform_str)?;
 
             // Find a matching manifest entry
             image_index
@@ -556,8 +555,8 @@ impl RegistryClient {
                     if let Some(p) = &entry.platform {
                         let os_match = p.os == req_os;
                         let arch_match = p.architecture == req_arch;
-                        let variant_match = match req_variant {
-                            Some(v) => p.variant.as_deref() == Some(v),
+                        let variant_match = match &req_variant {
+                            Some(v) => p.variant.as_deref() == Some(v.as_str()),
                             None => true,
                         };
                         os_match && arch_match && variant_match
@@ -604,14 +603,17 @@ impl RegistryClient {
             anyhow::bail!("Failed to pull platform manifest: {}", response.status());
         }
 
-        let platform_digest = response
+        let header_digest = response
             .headers()
             .get("docker-content-digest")
             .and_then(|h| h.to_str().ok())
-            .unwrap_or("")
-            .to_string();
+            .map(|s| s.to_string());
 
         let platform_body = response.bytes().await?;
+
+        // Use header digest if available, otherwise compute from body
+        let platform_digest = header_digest
+            .unwrap_or_else(|| format!("sha256:{}", sha256::digest(platform_body.as_ref())));
         debug!(
             "Platform manifest response body: {}",
             String::from_utf8_lossy(&platform_body)
@@ -1076,20 +1078,18 @@ impl RegistryClient {
             Ok(platforms)
         } else if let Ok(manifest) = serde_json::from_slice::<OciImageManifest>(&body) {
             // Single-platform image — read the config to determine its platform
-            if let Some(config_descriptor) = &manifest.config {
-                let config_data = self.pull_blob(image_ref, config_descriptor, auth).await?;
-                if let Ok(config) =
-                    serde_json::from_slice::<crate::image::ImageConfig>(&config_data)
-                {
-                    Ok(vec![format!("{}/{}", config.os, config.architecture)])
-                } else {
-                    Ok(vec![])
-                }
-            } else {
-                Ok(vec![])
-            }
+            let config_descriptor = manifest.config.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("Single-platform manifest has no config descriptor")
+            })?;
+            let config_data = self.pull_blob(image_ref, config_descriptor, auth).await?;
+            let config = serde_json::from_slice::<crate::image::ImageConfig>(&config_data)
+                .context("Failed to parse image config for platform detection")?;
+            Ok(vec![format!("{}/{}", config.os, config.architecture)])
         } else {
-            Ok(vec![])
+            anyhow::bail!(
+                "Response is neither a valid image index nor image manifest; \
+                 cannot detect platforms"
+            )
         }
     }
 
