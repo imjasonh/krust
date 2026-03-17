@@ -79,6 +79,20 @@ pub struct Descriptor {
     pub digest: String,
 }
 
+/// Parse a platform string like "linux/amd64" or "linux/arm/v7" into (os, arch, variant).
+pub fn parse_platform_string(platform: &str) -> Result<(String, String, Option<String>)> {
+    let parts: Vec<&str> = platform.split('/').collect();
+    match parts.len() {
+        2 => Ok((parts[0].to_string(), parts[1].to_string(), None)),
+        3 => Ok((
+            parts[0].to_string(),
+            parts[1].to_string(),
+            Some(parts[2].to_string()),
+        )),
+        _ => anyhow::bail!("Invalid platform format: {}", platform),
+    }
+}
+
 pub struct ImageBuilder {
     binary_path: PathBuf,
     #[allow(dead_code)]
@@ -104,7 +118,7 @@ impl ImageBuilder {
     ) -> Result<(Vec<u8>, Vec<u8>, Manifest)> {
         info!("Building container image");
 
-        let (_os, _arch) = self.parse_platform()?;
+        let (_os, _arch, _variant) = self.parse_platform()?;
 
         // Fetch base image data
         info!(
@@ -133,7 +147,7 @@ impl ImageBuilder {
 
         // Add the application layer
         all_layers.push(Descriptor {
-            media_type: "application/vnd.docker.image.rootfs.diff.tar.gzip".to_string(),
+            media_type: "application/vnd.oci.image.layer.v1.tar+gzip".to_string(),
             size: app_layer_size,
             digest: app_layer_digest,
         });
@@ -147,9 +161,9 @@ impl ImageBuilder {
         // Create manifest
         let manifest = Manifest {
             schema_version: 2,
-            media_type: "application/vnd.docker.distribution.manifest.v2+json".to_string(),
+            media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
             config: Descriptor {
-                media_type: "application/vnd.docker.container.image.v1+json".to_string(),
+                media_type: "application/vnd.oci.image.config.v1+json".to_string(),
                 size: config_size,
                 digest: config_digest,
             },
@@ -159,12 +173,8 @@ impl ImageBuilder {
         Ok((config_data, app_layer_data, manifest))
     }
 
-    fn parse_platform(&self) -> Result<(String, String)> {
-        let parts: Vec<&str> = self.platform.split('/').collect();
-        if parts.len() != 2 {
-            anyhow::bail!("Invalid platform format: {}", self.platform);
-        }
-        Ok((parts[0].to_string(), parts[1].to_string()))
+    fn parse_platform(&self) -> Result<(String, String, Option<String>)> {
+        parse_platform_string(&self.platform)
     }
 
     fn create_layer(&self) -> Result<(Vec<u8>, String)> {
@@ -264,13 +274,12 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
 
-    fn create_test_binary() -> PathBuf {
+    fn create_test_binary() -> (PathBuf, tempfile::TempPath) {
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(b"fake binary content").unwrap();
-        let path = temp_file.path().to_path_buf();
-        // Keep the file alive by converting to a regular file
-        std::fs::copy(&path, &path).unwrap();
-        path
+        let temp_path = temp_file.into_temp_path();
+        let path = temp_path.to_path_buf();
+        (path, temp_path)
     }
 
     fn create_base_image_config() -> ImageConfig {
@@ -318,14 +327,29 @@ mod tests {
             "linux/amd64".to_string(),
         );
 
-        let (os, arch) = builder.parse_platform().unwrap();
+        let (os, arch, variant) = builder.parse_platform().unwrap();
         assert_eq!(os, "linux");
         assert_eq!(arch, "amd64");
+        assert_eq!(variant, None);
+    }
+
+    #[test]
+    fn test_parse_platform_with_variant() {
+        let builder = ImageBuilder::new(
+            PathBuf::from("/tmp/test"),
+            "test-base".to_string(),
+            "linux/arm/v7".to_string(),
+        );
+
+        let (os, arch, variant) = builder.parse_platform().unwrap();
+        assert_eq!(os, "linux");
+        assert_eq!(arch, "arm");
+        assert_eq!(variant, Some("v7".to_string()));
     }
 
     #[test]
     fn test_create_layered_config_preserves_base_environment() {
-        let binary_path = create_test_binary();
+        let (binary_path, _guard) = create_test_binary();
         let builder = ImageBuilder::new(
             binary_path,
             "test-base".to_string(),
@@ -359,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_create_layered_config_combines_diff_ids() {
-        let binary_path = create_test_binary();
+        let (binary_path, _guard) = create_test_binary();
         let builder = ImageBuilder::new(
             binary_path,
             "test-base".to_string(),
@@ -382,7 +406,7 @@ mod tests {
 
     #[test]
     fn test_create_layered_config_combines_history() {
-        let binary_path = create_test_binary();
+        let (binary_path, _guard) = create_test_binary();
         let builder = ImageBuilder::new(
             binary_path,
             "test-base".to_string(),
@@ -524,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_create_layered_config_adds_path_if_missing() {
-        let binary_path = create_test_binary();
+        let (binary_path, _guard) = create_test_binary();
         let builder = ImageBuilder::new(
             binary_path,
             "test-base".to_string(),
@@ -546,7 +570,7 @@ mod tests {
 
     #[test]
     fn test_create_layered_config_sets_cmd() {
-        let binary_path = create_test_binary();
+        let (binary_path, _guard) = create_test_binary();
         let builder = ImageBuilder::new(
             binary_path.clone(),
             "test-base".to_string(),

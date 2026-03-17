@@ -20,7 +20,7 @@ pub struct Config {
 
     /// Registry authentication configuration
     #[serde(default)]
-    pub registries: HashMap<String, RegistryAuth>,
+    pub registries: HashMap<String, RegistryCredential>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -38,7 +38,7 @@ pub struct BuildConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RegistryAuth {
+pub struct RegistryCredential {
     pub username: Option<String>,
     pub password: Option<String>,
     pub auth: Option<String>,
