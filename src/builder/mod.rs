@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tempfile::TempDir;
-use tracing::{debug, error, info};
+use tracing::{debug, info, warn};
 
 #[cfg(test)]
 mod tests;
@@ -15,7 +14,6 @@ pub struct RustBuilder {
 
 pub struct BuildResult {
     pub binary_path: PathBuf,
-    _temp_dir: TempDir, // Keep temp dir alive until BuildResult is dropped
 }
 
 impl RustBuilder {
@@ -32,94 +30,91 @@ impl RustBuilder {
         self
     }
 
+    /// Check if cargo-zigbuild is available.
+    fn has_zigbuild() -> bool {
+        Command::new("cargo")
+            .args(["zigbuild", "--version"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// Check if the rustup target is installed, and install it if not.
+    fn ensure_target_installed(target: &str) -> Result<()> {
+        let output = Command::new("rustup")
+            .args(["target", "list", "--installed"])
+            .output()
+            .context("Failed to run rustup. Is rustup installed?")?;
+
+        let installed = String::from_utf8_lossy(&output.stdout);
+        if installed.lines().any(|line| line.trim() == target) {
+            return Ok(());
+        }
+
+        info!("Installing rustup target: {}", target);
+        let status = Command::new("rustup")
+            .args(["target", "add", target])
+            .status()
+            .context("Failed to run rustup target add")?;
+
+        if !status.success() {
+            anyhow::bail!(
+                "Failed to install target '{}'. Run: rustup target add {}",
+                target,
+                target
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Get the persistent target directory for krust builds.
+    /// Uses `<project>/target/krust/` so cargo can reuse build caches.
+    fn target_dir(&self) -> PathBuf {
+        self.project_path.join("target").join("krust")
+    }
+
     pub fn build(&self) -> Result<BuildResult> {
         info!("Building Rust project at {:?}", self.project_path);
 
-        // Use a unique target directory to avoid conflicts between concurrent builds
-        let temp_target_dir =
-            tempfile::tempdir().context("Failed to create temporary directory")?;
-        let target_dir = temp_target_dir.path();
+        // Ensure the target is installed via rustup
+        Self::ensure_target_installed(&self.target)?;
+
+        let target_dir = self.target_dir();
+        let use_zigbuild = Self::has_zigbuild();
 
         let mut cmd = Command::new("cargo");
-        cmd.arg("build")
-            .arg("--release")
+        if use_zigbuild {
+            info!("Using cargo-zigbuild for cross-compilation");
+            cmd.arg("zigbuild");
+        } else {
+            warn!(
+                "cargo-zigbuild not found, falling back to cargo build. \
+                 Install it for easier cross-compilation: cargo install cargo-zigbuild"
+            );
+            cmd.arg("build");
+        }
+
+        cmd.arg("--release")
             .arg("--target")
             .arg(&self.target)
             .arg("--target-dir")
-            .arg(target_dir)
+            .arg(&target_dir)
             .current_dir(&self.project_path);
 
         // Set RUSTFLAGS for static linking
         let rustflags = if self.target.contains("musl") {
-            // For musl targets, ensure fully static linking
             "-C target-feature=+crt-static"
         } else {
-            // For GNU targets, link statically where possible
             "-C target-feature=+crt-static -C link-arg=-static-libgcc"
         };
         cmd.env("RUSTFLAGS", rustflags);
 
-        // For cross-compilation on non-Linux platforms, set linker if available
-        if cfg!(not(target_os = "linux")) && self.target.contains("linux") {
-            // Check if we have a musl cross-compiler available
-            if self.target.contains("x86_64-unknown-linux-musl") {
-                // On Windows, use rust-lld with full path
-                if cfg!(target_os = "windows") {
-                    // Get the rust sysroot to find rust-lld
-                    let sysroot_output = Command::new("rustc")
-                        .arg("--print")
-                        .arg("sysroot")
-                        .output()
-                        .context("Failed to get rustc sysroot")?;
-
-                    if sysroot_output.status.success() {
-                        let sysroot = String::from_utf8_lossy(&sysroot_output.stdout)
-                            .trim()
-                            .to_string();
-                        let rust_lld = PathBuf::from(&sysroot)
-                            .join("lib")
-                            .join("rustlib")
-                            .join("x86_64-pc-windows-msvc")
-                            .join("bin")
-                            .join("rust-lld.exe");
-
-                        if rust_lld.exists() {
-                            cmd.env(
-                                "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER",
-                                rust_lld.to_string_lossy().to_string(),
-                            );
-                            debug!("Using linker: {}", rust_lld.display());
-                        } else {
-                            // Fallback to just "rust-lld" and hope it's in PATH
-                            cmd.env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "rust-lld");
-                            debug!("Using linker: rust-lld (in PATH)");
-                        }
-                    } else {
-                        // Fallback to just "rust-lld"
-                        cmd.env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "rust-lld");
-                        debug!("Using linker: rust-lld (fallback)");
-                    }
-                } else {
-                    // Try common linker names on other platforms
-                    let linkers = if cfg!(target_os = "macos") {
-                        vec![
-                            "x86_64-unknown-linux-musl-gcc",
-                            "x86_64-linux-musl-gcc",
-                            "musl-gcc",
-                        ]
-                    } else {
-                        vec!["x86_64-linux-musl-gcc", "musl-gcc", "x86_64-linux-gnu-gcc"]
-                    };
-
-                    for linker in &linkers {
-                        if which::which(linker).is_ok() {
-                            cmd.env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", linker);
-                            debug!("Using linker: {}", linker);
-                            break;
-                        }
-                    }
-                }
-            }
+        // When not using zigbuild, try to find a cross-linker for non-native targets
+        if !use_zigbuild {
+            self.configure_cross_linker(&mut cmd);
         }
 
         for arg in &self.cargo_args {
@@ -133,11 +128,20 @@ impl RustBuilder {
         let output = cmd.output().context("Failed to execute cargo build")?;
 
         if !output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Cargo build failed!");
-            error!("stdout:\n{}", stdout);
-            error!("stderr:\n{}", stderr);
+
+            // Provide actionable error messages
+            let stderr_str = stderr.to_string();
+            if stderr_str.contains("linker") && stderr_str.contains("not found") {
+                anyhow::bail!(
+                    "Cross-compilation linker not found for target '{}'.\n\
+                     Install cargo-zigbuild for easy cross-compilation:\n\
+                     \n  cargo install cargo-zigbuild\n\
+                     \nOr install the appropriate system linker for your platform.",
+                    self.target
+                );
+            }
+
             anyhow::bail!("Cargo build failed: {}", stderr);
         }
 
@@ -163,11 +167,71 @@ impl RustBuilder {
 
         info!("Successfully built binary at {:?}", binary_path);
 
-        // Return the build result with the temp directory to keep it alive
-        Ok(BuildResult {
-            binary_path,
-            _temp_dir: temp_target_dir,
-        })
+        Ok(BuildResult { binary_path })
+    }
+
+    /// Configure cross-compilation linker when not using zigbuild.
+    /// This is a best-effort fallback for users who don't have zigbuild installed.
+    fn configure_cross_linker(&self, cmd: &mut Command) {
+        // Only needed when cross-compiling
+        let is_cross = if cfg!(target_os = "linux") {
+            // On Linux, check if we're building for a different arch
+            let host_arch = std::env::consts::ARCH;
+            let target_arch = self.target.split('-').next().unwrap_or("");
+            host_arch != target_arch
+                && !(host_arch == "x86_64" && target_arch == "x86_64")
+                && !(host_arch == "aarch64" && target_arch == "aarch64")
+        } else {
+            // On non-Linux hosts, always need cross-linker for Linux targets
+            self.target.contains("linux")
+        };
+
+        if !is_cross {
+            return;
+        }
+
+        // Build the CARGO_TARGET_<triple>_LINKER env var name
+        let env_var = format!(
+            "CARGO_TARGET_{}_LINKER",
+            self.target.to_uppercase().replace('-', "_")
+        );
+
+        // Try common linker names based on target
+        let linkers: Vec<&str> = if self.target.contains("x86_64") && self.target.contains("musl") {
+            vec!["x86_64-linux-musl-gcc", "musl-gcc"]
+        } else if self.target.contains("aarch64") && self.target.contains("musl") {
+            vec!["aarch64-linux-musl-gcc", "aarch64-linux-gnu-gcc"]
+        } else if self.target.contains("armv7") {
+            vec!["arm-linux-gnueabihf-gcc", "armv7-linux-musleabihf-gcc"]
+        } else if self.target.contains("arm-") {
+            vec!["arm-linux-gnueabihf-gcc", "arm-linux-musleabihf-gcc"]
+        } else if self.target.contains("i686") {
+            vec!["i686-linux-musl-gcc", "i686-linux-gnu-gcc"]
+        } else if self.target.contains("powerpc64le") {
+            vec!["powerpc64le-linux-gnu-gcc"]
+        } else if self.target.contains("s390x") {
+            vec!["s390x-linux-gnu-gcc"]
+        } else if self.target.contains("riscv64") {
+            vec!["riscv64-linux-gnu-gcc"]
+        } else {
+            vec![]
+        };
+
+        for linker in &linkers {
+            if which::which(linker).is_ok() {
+                cmd.env(&env_var, linker);
+                debug!("Using linker: {}", linker);
+                return;
+            }
+        }
+
+        if !linkers.is_empty() {
+            debug!(
+                "No cross-linker found for target '{}'. Build may fail. \
+                 Consider installing cargo-zigbuild: cargo install cargo-zigbuild",
+                self.target
+            );
+        }
     }
 
     fn get_binary_name(&self) -> Result<String> {

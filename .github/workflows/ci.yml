@@ -25,10 +25,10 @@ jobs:
         toolchain: ${{ matrix.rust }}
         targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
         components: rustfmt,clippy
-    - name: Install cross-compilation tools for both architectures
+    - name: Install cargo-zigbuild and zig
       run: |
-        sudo apt-get update
-        sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
+        sudo snap install zig --classic --beta || sudo apt-get update && sudo apt-get install -y ziglang
+        cargo install cargo-zigbuild
     - name: Cache cargo registry
       uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v4
       with:
@@ -47,19 +47,6 @@ jobs:
 
     - run: make check-fmt
     - run: make lint
-
-    - name: Setup cargo config for CI cross-compilation
-      run: |
-        mkdir -p .cargo
-        cat > .cargo/config.toml << 'EOF'
-        [target.x86_64-unknown-linux-musl]
-        linker = "musl-gcc"
-
-        [target.aarch64-unknown-linux-musl]
-        linker = "aarch64-linux-gnu-gcc"
-        EOF
-
-    - run: make verify-cross-compile
     - run: make build
     - run: make test
     - run: make test-e2e

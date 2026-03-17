@@ -16,6 +16,7 @@ Thumbs.db
 
 # Cargo
 Cargo.lock
+.cargo/
 
 # Coverage
 tarpaulin-report.html
