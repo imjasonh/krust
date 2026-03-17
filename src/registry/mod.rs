@@ -484,7 +484,7 @@ impl RegistryClient {
 
         let mut req = self.client
             .get(&url)
-            .header("Accept", "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.index.v1+json");
+            .header("Accept", "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json");
 
         if let Some(token) = token {
             req = req.header("Authorization", format!("Bearer {}", token));
@@ -496,7 +496,7 @@ impl RegistryClient {
             anyhow::bail!("Failed to pull manifest: {}", response.status());
         }
 
-        let digest = response
+        let index_digest = response
             .headers()
             .get("docker-content-digest")
             .and_then(|h| h.to_str().ok())
@@ -507,16 +507,18 @@ impl RegistryClient {
         debug!("Manifest response body: {}", String::from_utf8_lossy(&body));
 
         // Try to parse as either image manifest or image index
-        let manifest: OciImageManifest =
+        let (manifest, digest) =
             if let Ok(image_manifest) = serde_json::from_slice::<OciImageManifest>(&body) {
                 // Check if this is actually an image index by looking at the media type
-                if image_manifest.media_type.contains("index") {
+                if image_manifest.media_type.contains("index")
+                    || image_manifest.media_type.contains("manifest.list")
+                {
                     // Re-parse as index
                     let image_index: OciImageIndex = serde_json::from_slice(&body)?;
                     self.select_platform_manifest(&reference, &image_index, auth, platform)
                         .await?
                 } else {
-                    image_manifest
+                    (image_manifest, index_digest)
                 }
             } else if let Ok(image_index) = serde_json::from_slice::<OciImageIndex>(&body) {
                 self.select_platform_manifest(&reference, &image_index, auth, platform)
@@ -529,13 +531,14 @@ impl RegistryClient {
     }
 
     /// Select and pull a platform-specific manifest from an image index.
+    /// Returns the manifest and its digest (from the platform-specific response).
     async fn select_platform_manifest(
         &mut self,
         reference: &ImageReference,
         image_index: &OciImageIndex,
         auth: &RegistryAuth,
         platform: Option<&str>,
-    ) -> Result<OciImageManifest> {
+    ) -> Result<(OciImageManifest, String)> {
         let selected = if let Some(platform_str) = platform {
             // Parse the requested platform
             let parts: Vec<&str> = platform_str.split('/').collect();
@@ -601,13 +604,23 @@ impl RegistryClient {
             anyhow::bail!("Failed to pull platform manifest: {}", response.status());
         }
 
+        let platform_digest = response
+            .headers()
+            .get("docker-content-digest")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
         let platform_body = response.bytes().await?;
         debug!(
             "Platform manifest response body: {}",
             String::from_utf8_lossy(&platform_body)
         );
 
-        Ok(serde_json::from_slice::<OciImageManifest>(&platform_body)?)
+        Ok((
+            serde_json::from_slice::<OciImageManifest>(&platform_body)?,
+            platform_digest,
+        ))
     }
 
     // Pull a blob from the registry
@@ -1061,8 +1074,21 @@ impl RegistryClient {
                 })
                 .collect();
             Ok(platforms)
+        } else if let Ok(manifest) = serde_json::from_slice::<OciImageManifest>(&body) {
+            // Single-platform image — read the config to determine its platform
+            if let Some(config_descriptor) = &manifest.config {
+                let config_data = self.pull_blob(image_ref, config_descriptor, auth).await?;
+                if let Ok(config) =
+                    serde_json::from_slice::<crate::image::ImageConfig>(&config_data)
+                {
+                    Ok(vec![format!("{}/{}", config.os, config.architecture)])
+                } else {
+                    Ok(vec![])
+                }
+            } else {
+                Ok(vec![])
+            }
         } else {
-            // Single-platform image, no index available
             Ok(vec![])
         }
     }
