@@ -205,25 +205,25 @@ mod unit_tests {
 
         // Test anonymous
         let auth = AuthConfig::anonymous();
-        matches!(auth.to_registry_auth(), RegistryAuth::Anonymous);
+        assert!(matches!(auth.to_registry_auth(), RegistryAuth::Anonymous));
 
         // Test basic auth
         let auth = AuthConfig::new("user".to_string(), "pass".to_string());
-        matches!(
+        assert!(matches!(
             auth.to_registry_auth(),
-            RegistryAuth::Basic { username, password }
+            RegistryAuth::Basic { ref username, ref password }
             if username == "user" && password == "pass"
-        );
+        ));
 
         // Test bearer token
         let auth = AuthConfig {
             registry_token: Some("token123".to_string()),
             ..Default::default()
         };
-        matches!(
+        assert!(matches!(
             auth.to_registry_auth(),
-            RegistryAuth::Bearer { token }
+            RegistryAuth::Bearer { ref token }
             if token == "token123"
-        );
+        ));
     }
 }
