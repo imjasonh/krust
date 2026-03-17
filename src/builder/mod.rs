@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 #[cfg(test)]
 mod tests;
@@ -30,15 +30,23 @@ impl RustBuilder {
         self
     }
 
-    /// Check if cargo-zigbuild is available.
-    fn has_zigbuild() -> bool {
-        Command::new("cargo")
+    /// Check that cargo-zigbuild is available, or bail with install instructions.
+    fn require_zigbuild() -> Result<()> {
+        let available = Command::new("cargo")
             .args(["zigbuild", "--version"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
             .map(|s| s.success())
-            .unwrap_or(false)
+            .unwrap_or(false);
+        if !available {
+            anyhow::bail!(
+                "cargo-zigbuild is required but not found.\n\
+                 Install it with: cargo install cargo-zigbuild\n\
+                 Also install zig: pip install ziglang (or see https://ziglang.org/download/)"
+            );
+        }
+        Ok(())
     }
 
     /// Check if the rustup target is installed, and install it if not.
@@ -83,19 +91,11 @@ impl RustBuilder {
         Self::ensure_target_installed(&self.target)?;
 
         let target_dir = self.target_dir();
-        let use_zigbuild = Self::has_zigbuild();
+        Self::require_zigbuild()?;
 
         let mut cmd = Command::new("cargo");
-        if use_zigbuild {
-            info!("Using cargo-zigbuild for cross-compilation");
-            cmd.arg("zigbuild");
-        } else {
-            warn!(
-                "cargo-zigbuild not found, falling back to cargo build. \
-                 Install it for easier cross-compilation: cargo install cargo-zigbuild"
-            );
-            cmd.arg("build");
-        }
+        info!("Using cargo-zigbuild for cross-compilation");
+        cmd.arg("zigbuild");
 
         cmd.arg("--release")
             .arg("--target")
@@ -112,11 +112,6 @@ impl RustBuilder {
         };
         cmd.env("RUSTFLAGS", rustflags);
 
-        // When not using zigbuild, try to find a cross-linker for non-native targets
-        if !use_zigbuild {
-            self.configure_cross_linker(&mut cmd);
-        }
-
         for arg in &self.cargo_args {
             cmd.arg(arg);
         }
@@ -129,19 +124,6 @@ impl RustBuilder {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-
-            // Provide actionable error messages
-            let stderr_str = stderr.to_string();
-            if stderr_str.contains("linker") && stderr_str.contains("not found") {
-                anyhow::bail!(
-                    "Cross-compilation linker not found for target '{}'.\n\
-                     Install cargo-zigbuild for easy cross-compilation:\n\
-                     \n  cargo install cargo-zigbuild\n\
-                     \nOr install the appropriate system linker for your platform.",
-                    self.target
-                );
-            }
-
             anyhow::bail!("Cargo build failed: {}", stderr);
         }
 
@@ -168,70 +150,6 @@ impl RustBuilder {
         info!("Successfully built binary at {:?}", binary_path);
 
         Ok(BuildResult { binary_path })
-    }
-
-    /// Configure cross-compilation linker when not using zigbuild.
-    /// This is a best-effort fallback for users who don't have zigbuild installed.
-    fn configure_cross_linker(&self, cmd: &mut Command) {
-        // Only needed when cross-compiling
-        let is_cross = if cfg!(target_os = "linux") {
-            // On Linux, check if we're building for a different arch
-            let host_arch = std::env::consts::ARCH;
-            let target_arch = self.target.split('-').next().unwrap_or("");
-            host_arch != target_arch
-                && !(host_arch == "x86_64" && target_arch == "x86_64")
-                && !(host_arch == "aarch64" && target_arch == "aarch64")
-        } else {
-            // On non-Linux hosts, always need cross-linker for Linux targets
-            self.target.contains("linux")
-        };
-
-        if !is_cross {
-            return;
-        }
-
-        // Build the CARGO_TARGET_<triple>_LINKER env var name
-        let env_var = format!(
-            "CARGO_TARGET_{}_LINKER",
-            self.target.to_uppercase().replace('-', "_")
-        );
-
-        // Try common linker names based on target
-        let linkers: Vec<&str> = if self.target.contains("x86_64") && self.target.contains("musl") {
-            vec!["x86_64-linux-musl-gcc", "musl-gcc"]
-        } else if self.target.contains("aarch64") && self.target.contains("musl") {
-            vec!["aarch64-linux-musl-gcc", "aarch64-linux-gnu-gcc"]
-        } else if self.target.contains("armv7") {
-            vec!["arm-linux-gnueabihf-gcc", "armv7-linux-musleabihf-gcc"]
-        } else if self.target.contains("arm-") {
-            vec!["arm-linux-gnueabihf-gcc", "arm-linux-musleabihf-gcc"]
-        } else if self.target.contains("i686") {
-            vec!["i686-linux-musl-gcc", "i686-linux-gnu-gcc"]
-        } else if self.target.contains("powerpc64le") {
-            vec!["powerpc64le-linux-gnu-gcc"]
-        } else if self.target.contains("s390x") {
-            vec!["s390x-linux-gnu-gcc"]
-        } else if self.target.contains("riscv64") {
-            vec!["riscv64-linux-gnu-gcc"]
-        } else {
-            vec![]
-        };
-
-        for linker in &linkers {
-            if which::which(linker).is_ok() {
-                cmd.env(&env_var, linker);
-                debug!("Using linker: {}", linker);
-                return;
-            }
-        }
-
-        if !linkers.is_empty() {
-            debug!(
-                "No cross-linker found for target '{}'. Build may fail. \
-                 Consider installing cargo-zigbuild: cargo install cargo-zigbuild",
-                self.target
-            );
-        }
     }
 
     fn get_binary_name(&self) -> Result<String> {

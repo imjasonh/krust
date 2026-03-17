@@ -49,10 +49,6 @@ jobs:
       run: |
         pip install --break-system-packages ziglang
         command -v cargo-zigbuild || cargo install cargo-zigbuild
-    - name: Install system cross-linkers (fallback)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
 
     - run: make check-fmt
     - run: make lint

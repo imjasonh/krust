@@ -92,9 +92,9 @@ GAR has special handling for blob uploads that differs from the standard OCI spe
 
 ### Cross-Compilation
 
-krust uses `cargo-zigbuild` for cross-compilation by default. This eliminates the need for
+krust requires `cargo-zigbuild` for cross-compilation. This eliminates the need for
 per-target system linkers and `.cargo/config.toml` linker configuration. If zigbuild is not
-available, krust falls back to `cargo build` with best-effort system linker detection.
+available, krust fails with install instructions.
 
 Required targets are auto-installed via `rustup target add` when needed.
 
