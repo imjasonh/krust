@@ -32,13 +32,7 @@ pub struct OciImageManifest {
     pub annotations: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Platform {
-    pub architecture: String,
-    pub os: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub variant: Option<String>,
-}
+use crate::manifest::Platform;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageIndexEntry {
@@ -185,20 +179,16 @@ impl ImageReference {
 
 pub struct RegistryClient {
     client: reqwest::Client,
-    #[allow(dead_code)]
-    auth_cache: HashMap<String, String>, // registry -> token
 }
 
 impl RegistryClient {
     pub fn new() -> Result<Self> {
-        // Create two clients - one with redirects, one without
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(300))
             .build()?;
-        Ok(Self {
-            client,
-            auth_cache: HashMap::new(),
-        })
+        Ok(Self { client })
     }
 
     /// Check if a blob exists in the registry using HEAD request
@@ -385,10 +375,13 @@ impl RegistryClient {
             challenge.scope.clone()
         };
 
-        let token_url = format!(
-            "{}?service={}&scope={}",
-            challenge.realm, challenge.service, scope
-        );
+        let mut token_url =
+            reqwest::Url::parse(&challenge.realm).context("Invalid token realm URL")?;
+        token_url
+            .query_pairs_mut()
+            .append_pair("service", &challenge.service)
+            .append_pair("scope", &scope);
+        let token_url = token_url.to_string();
 
         let response = self.client.get(&token_url).send().await?;
 
@@ -418,10 +411,13 @@ impl RegistryClient {
             challenge.scope.clone()
         };
 
-        let token_url = format!(
-            "{}?service={}&scope={}",
-            challenge.realm, challenge.service, scope
-        );
+        let mut token_url =
+            reqwest::Url::parse(&challenge.realm).context("Invalid token realm URL")?;
+        token_url
+            .query_pairs_mut()
+            .append_pair("service", &challenge.service)
+            .append_pair("scope", &scope);
+        let token_url = token_url.to_string();
         let auth_header = format!("{}:{}", username, password);
         let encoded_auth = base64::engine::general_purpose::STANDARD.encode(auth_header.as_bytes());
 
@@ -445,11 +441,23 @@ impl RegistryClient {
         }
     }
 
-    // Pull a manifest from the registry
+    // Pull a manifest from the registry, optionally filtering by platform
+    // when the manifest is an image index.
     pub async fn pull_manifest(
         &mut self,
         image_ref: &str,
         auth: &RegistryAuth,
+    ) -> Result<(OciImageManifest, String)> {
+        self.pull_manifest_for_platform(image_ref, auth, None).await
+    }
+
+    // Pull a manifest from the registry, selecting the given platform from
+    // an image index if present.
+    async fn pull_manifest_for_platform(
+        &mut self,
+        image_ref: &str,
+        auth: &RegistryAuth,
+        platform: Option<&str>,
     ) -> Result<(OciImageManifest, String)> {
         debug!("Parsing image reference: {}", image_ref);
         let reference = ImageReference::parse(image_ref)?;
@@ -476,7 +484,7 @@ impl RegistryClient {
 
         let mut req = self.client
             .get(&url)
-            .header("Accept", "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json");
+            .header("Accept", "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.index.v1+json");
 
         if let Some(token) = token {
             req = req.header("Authorization", format!("Bearer {}", token));
@@ -499,56 +507,107 @@ impl RegistryClient {
         debug!("Manifest response body: {}", String::from_utf8_lossy(&body));
 
         // Try to parse as either image manifest or image index
-        let manifest: OciImageManifest = if let Ok(image_manifest) =
-            serde_json::from_slice::<OciImageManifest>(&body)
-        {
-            image_manifest
-        } else if let Ok(image_index) = serde_json::from_slice::<OciImageIndex>(&body) {
-            // If it's an image index, we need to find the specific platform manifest
-            // For now, just take the first one (this should be enhanced to match platform)
-            if let Some(first_manifest) = image_index.manifests.first() {
-                // Pull the platform-specific manifest directly
-                let platform_digest = &first_manifest.digest;
-                let url = format!(
-                    "https://{}/v2/{}/manifests/{}",
-                    reference.registry, reference.repository, platform_digest
-                );
-
-                debug!("Pulling platform-specific manifest from URL: {}", url);
-
-                let mut req = self.client
-                    .get(&url)
-                    .header("Accept", "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json");
-
-                // Re-authenticate for the platform-specific request
-                let platform_token = self
-                    .authenticate(&reference.registry, &reference.repository, auth)
-                    .await?;
-                if let Some(token) = platform_token {
-                    req = req.header("Authorization", format!("Bearer {}", token));
+        let manifest: OciImageManifest =
+            if let Ok(image_manifest) = serde_json::from_slice::<OciImageManifest>(&body) {
+                // Check if this is actually an image index by looking at the media type
+                if image_manifest.media_type.contains("index") {
+                    // Re-parse as index
+                    let image_index: OciImageIndex = serde_json::from_slice(&body)?;
+                    self.select_platform_manifest(&reference, &image_index, auth, platform)
+                        .await?
+                } else {
+                    image_manifest
                 }
-
-                let response = req.send().await?;
-
-                if !response.status().is_success() {
-                    anyhow::bail!("Failed to pull platform manifest: {}", response.status());
-                }
-
-                let platform_body = response.bytes().await?;
-                debug!(
-                    "Platform manifest response body: {}",
-                    String::from_utf8_lossy(&platform_body)
-                );
-
-                serde_json::from_slice::<OciImageManifest>(&platform_body)?
+            } else if let Ok(image_index) = serde_json::from_slice::<OciImageIndex>(&body) {
+                self.select_platform_manifest(&reference, &image_index, auth, platform)
+                    .await?
             } else {
-                anyhow::bail!("Image index has no manifests");
-            }
-        } else {
-            anyhow::bail!("Response is neither a valid image manifest nor image index");
-        };
+                anyhow::bail!("Response is neither a valid image manifest nor image index");
+            };
 
         Ok((manifest, digest))
+    }
+
+    /// Select and pull a platform-specific manifest from an image index.
+    async fn select_platform_manifest(
+        &mut self,
+        reference: &ImageReference,
+        image_index: &OciImageIndex,
+        auth: &RegistryAuth,
+        platform: Option<&str>,
+    ) -> Result<OciImageManifest> {
+        let selected = if let Some(platform_str) = platform {
+            // Parse the requested platform
+            let parts: Vec<&str> = platform_str.split('/').collect();
+            let (req_os, req_arch, req_variant) = match parts.len() {
+                2 => (parts[0], parts[1], None),
+                3 => (parts[0], parts[1], Some(parts[2])),
+                _ => anyhow::bail!("Invalid platform format: {}", platform_str),
+            };
+
+            // Find a matching manifest entry
+            image_index
+                .manifests
+                .iter()
+                .find(|entry| {
+                    if let Some(p) = &entry.platform {
+                        let os_match = p.os == req_os;
+                        let arch_match = p.architecture == req_arch;
+                        let variant_match = match req_variant {
+                            Some(v) => p.variant.as_deref() == Some(v),
+                            None => true,
+                        };
+                        os_match && arch_match && variant_match
+                    } else {
+                        false
+                    }
+                })
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No manifest found for platform {} in image index",
+                        platform_str
+                    )
+                })?
+        } else {
+            // No platform specified, take the first entry
+            image_index
+                .manifests
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("Image index has no manifests"))?
+        };
+
+        let platform_digest = &selected.digest;
+        let url = format!(
+            "https://{}/v2/{}/manifests/{}",
+            reference.registry, reference.repository, platform_digest
+        );
+
+        debug!("Pulling platform-specific manifest from URL: {}", url);
+
+        let mut req = self.client
+            .get(&url)
+            .header("Accept", "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json");
+
+        let platform_token = self
+            .authenticate(&reference.registry, &reference.repository, auth)
+            .await?;
+        if let Some(token) = platform_token {
+            req = req.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = req.send().await?;
+
+        if !response.status().is_success() {
+            anyhow::bail!("Failed to pull platform manifest: {}", response.status());
+        }
+
+        let platform_body = response.bytes().await?;
+        debug!(
+            "Platform manifest response body: {}",
+            String::from_utf8_lossy(&platform_body)
+        );
+
+        Ok(serde_json::from_slice::<OciImageManifest>(&platform_body)?)
     }
 
     // Pull a blob from the registry
@@ -805,13 +864,13 @@ impl RegistryClient {
         anyhow::bail!("Failed to upload blob: {} - {}", monolithic_status, body)
     }
 
-    // Push a manifest to the registry
+    // Push a manifest to the registry, returns the digest string
     pub async fn push_manifest(
         &mut self,
         image_ref: &str,
         manifest: &OciImageManifest,
         auth: &RegistryAuth,
-    ) -> Result<(String, String)> {
+    ) -> Result<String> {
         let reference = ImageReference::parse(image_ref)?;
         let manifest_json = serde_json::to_vec_pretty(manifest)?;
         let manifest_digest = format!("sha256:{}", sha256::digest(&manifest_json));
@@ -827,11 +886,7 @@ impl RegistryClient {
             .await?
         {
             debug!("Manifest {} already exists, skipping push", manifest_digest);
-            let digest_ref = format!(
-                "{}/{}@{}",
-                reference.registry, reference.repository, manifest_digest
-            );
-            return Ok((digest_ref, manifest_digest));
+            return Ok(manifest_digest);
         }
 
         info!("Pushing manifest with digest: {}", manifest_digest);
@@ -871,16 +926,10 @@ impl RegistryClient {
         let digest = headers
             .get("docker-content-digest")
             .and_then(|h| h.to_str().ok())
-            .unwrap_or("")
+            .unwrap_or(&manifest_digest)
             .to_string();
 
-        let location = headers
-            .get("location")
-            .and_then(|h| h.to_str().ok())
-            .unwrap_or(&url)
-            .to_string();
-
-        Ok((location, digest))
+        Ok(digest)
     }
 
     // Legacy methods for compatibility with existing code
@@ -929,7 +978,7 @@ impl RegistryClient {
             annotations: None,
         };
 
-        let (_, digest) = self.push_manifest(repository, &manifest, auth).await?;
+        let digest = self.push_manifest(repository, &manifest, auth).await?;
         let reference = ImageReference::parse(repository)?;
         let digest_ref = format!("{}/{}@{}", reference.registry, reference.repository, digest);
         let manifest_size = serde_json::to_vec(&manifest)?.len();
@@ -940,10 +989,12 @@ impl RegistryClient {
     pub async fn fetch_image_data(
         &mut self,
         image_ref: &str,
-        _platform: &str,
+        platform: &str,
         auth: &RegistryAuth,
     ) -> Result<(OciImageManifest, crate::image::ImageConfig)> {
-        let (manifest, _digest) = self.pull_manifest(image_ref, auth).await?;
+        let (manifest, _digest) = self
+            .pull_manifest_for_platform(image_ref, auth, Some(platform))
+            .await?;
 
         if let Some(config_descriptor) = &manifest.config {
             let config_data = self.pull_blob(image_ref, config_descriptor, auth).await?;
@@ -956,12 +1007,64 @@ impl RegistryClient {
 
     pub async fn get_image_platforms(
         &mut self,
-        _image_ref: &str,
-        _auth: &RegistryAuth,
+        image_ref: &str,
+        auth: &RegistryAuth,
     ) -> Result<Vec<String>> {
-        // For now, return default platforms - this would need to be enhanced
-        // to actually fetch and parse image indexes
-        Ok(vec!["linux/amd64".to_string(), "linux/arm64".to_string()])
+        let reference = ImageReference::parse(image_ref)?;
+        let token = self
+            .authenticate(&reference.registry, &reference.repository, auth)
+            .await?;
+
+        let manifest_ref = if let Some(digest) = &reference.digest {
+            digest.clone()
+        } else {
+            reference.tag.as_deref().unwrap_or("latest").to_string()
+        };
+
+        let url = format!(
+            "https://{}/v2/{}/manifests/{}",
+            reference.registry, reference.repository, manifest_ref
+        );
+
+        let mut req = self.client
+            .get(&url)
+            .header("Accept", "application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json");
+
+        if let Some(token) = token {
+            req = req.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = req.send().await?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "Failed to fetch manifest for platform detection: {}",
+                response.status()
+            );
+        }
+
+        let body = response.bytes().await?;
+
+        // Try to parse as an image index
+        if let Ok(image_index) = serde_json::from_slice::<OciImageIndex>(&body) {
+            let platforms: Vec<String> = image_index
+                .manifests
+                .iter()
+                .filter_map(|entry| {
+                    entry.platform.as_ref().map(|p| {
+                        if let Some(variant) = &p.variant {
+                            format!("{}/{}/{}", p.os, p.architecture, variant)
+                        } else {
+                            format!("{}/{}", p.os, p.architecture)
+                        }
+                    })
+                })
+                .collect();
+            Ok(platforms)
+        } else {
+            // Single-platform image, no index available
+            Ok(vec![])
+        }
     }
 
     /// Push a layered image where only the top layer is new
@@ -1055,7 +1158,7 @@ impl RegistryClient {
             annotations: None,
         };
 
-        let (_, digest) = self.push_manifest(repository, &oci_manifest, auth).await?;
+        let digest = self.push_manifest(repository, &oci_manifest, auth).await?;
         let digest_ref = format!(
             "{}/{}@{}",
             target_reference.registry, target_reference.repository, digest
@@ -1092,11 +1195,7 @@ impl RegistryClient {
                 media_type: m.media_type.clone(),
                 digest: m.digest.clone(),
                 size: m.size,
-                platform: Some(Platform {
-                    architecture: m.platform.architecture.clone(),
-                    os: m.platform.os.clone(),
-                    variant: m.platform.variant.clone(),
-                }),
+                platform: Some(m.platform.clone()),
                 annotations: None,
             })
             .collect();

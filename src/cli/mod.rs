@@ -44,12 +44,6 @@ pub enum Commands {
         cargo_args: Vec<String>,
     },
 
-    /// Push a built image to a container registry
-    Push {
-        /// Image reference to push
-        image: String,
-    },
-
     /// Resolve krust:// references in YAML files
     Resolve {
         /// Path to YAML file or directory containing YAML files
