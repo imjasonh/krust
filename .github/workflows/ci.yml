@@ -29,29 +29,29 @@ jobs:
       uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v4
       with:
         path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo index
       uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v4
       with:
         path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo build
       uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v4
       with:
         path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo-zigbuild
       uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v4
       with:
         path: ~/.cargo/bin/cargo-zigbuild
-        key: ${{ runner.os }}-cargo-zigbuild-${{ matrix.rust }}
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-zigbuild-${{ matrix.rust }}
     - name: Install zig and cargo-zigbuild
       run: |
         pip install --break-system-packages ziglang
         # ziglang pip package installs as python-zig, symlink to zig for cargo-zigbuild
         sudo ln -sf "$(which python-zig)" /usr/local/bin/zig
         zig version
-        cargo-zigbuild --version || cargo install cargo-zigbuild
+        cargo-zigbuild --version || cargo install --force cargo-zigbuild
 
     - run: make check-fmt
     - run: make lint
