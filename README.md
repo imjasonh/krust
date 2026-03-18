@@ -7,7 +7,7 @@ A container image build tool for Rust applications, inspired by [`ko`](https://k
 ## Overview
 
 krust builds container images for Rust applications without requiring Docker. It:
-- Executes `cargo build` to compile your Rust application as a static binary using musl libc
+- Uses [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) to compile your Rust application as a static binary using musl libc
 - Packages the resulting binary into a minimal container image layer
 - Pushes images to OCI-compliant registries by default (use `--no-push` to skip)
 - Creates truly static binaries by default for maximum portability and security
@@ -15,6 +15,10 @@ krust builds container images for Rust applications without requiring Docker. It
 ## Quick Start
 
 ```bash
+# Install prerequisites
+cargo install cargo-zigbuild
+# Also install zig: brew install zig (macOS) or see https://ziglang.org/download/
+
 # Install krust
 cargo install --path .
 
@@ -33,7 +37,7 @@ cargo install --path .
 
 ### Prerequisites
 
-Install [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) for cross-compilation (recommended):
+krust requires [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) and [Zig](https://ziglang.org/) for cross-compilation:
 
 ```bash
 # Install zig (cargo-zigbuild's cross-compilation backend)
@@ -46,7 +50,7 @@ sudo snap install zig --classic --beta  # or via your package manager
 cargo install cargo-zigbuild
 ```
 
-krust will automatically install the required rustup targets when building. If `cargo-zigbuild` is not installed, krust falls back to `cargo build` and will attempt to find a system cross-linker.
+krust will automatically install the required rustup targets when building, but `cargo-zigbuild` and `zig` must be installed beforehand.
 
 Note: krust builds fully static binaries by default using musl libc, ensuring maximum portability across different Linux distributions and container environments.
 
@@ -138,7 +142,7 @@ krust builds your Rust application and packages it into a container image:
 
 1. **Target installation** - Automatically installs the required rustup target if missing
 2. **Static compilation** - Builds with `RUSTFLAGS="-C target-feature=+crt-static"` for musl targets
-3. **Cross-compilation** - Uses `cargo-zigbuild` for seamless cross-compilation (falls back to `cargo build` with system linkers)
+3. **Cross-compilation** - Uses `cargo-zigbuild` for seamless cross-compilation to any supported platform
 4. **Cached builds** - Uses `target/krust/` as the build directory, so incremental compilation works across runs
 5. **Container creation** - Packages the binary into a minimal OCI image
 
@@ -416,12 +420,12 @@ Prints the current krust version.
 
 ### "linking with `cc` failed" or linker errors
 
-Install `cargo-zigbuild` for seamless cross-compilation:
+Ensure `cargo-zigbuild` and `zig` are installed:
 ```bash
 cargo install cargo-zigbuild
+# macOS: brew install zig
+# Linux: sudo snap install zig --classic --beta
 ```
-
-If you prefer not to use zigbuild, install the appropriate system cross-linker for your target platform.
 
 ### Platform mismatch warning when running images
 
