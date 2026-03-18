@@ -48,6 +48,9 @@ jobs:
     - name: Install zig and cargo-zigbuild
       run: |
         pip install --break-system-packages ziglang
+        # ziglang pip package installs as python-zig, symlink to zig for cargo-zigbuild
+        sudo ln -sf "$(which python-zig)" /usr/local/bin/zig
+        zig version
         command -v cargo-zigbuild || cargo install cargo-zigbuild
 
     - run: make check-fmt
