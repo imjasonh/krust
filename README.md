@@ -33,52 +33,20 @@ cargo install --path .
 
 ### Prerequisites
 
-Install the Linux musl targets for static binary cross-compilation:
+Install [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) for cross-compilation (recommended):
 
 ```bash
-# For linux/amd64 (most common)
-rustup target add x86_64-unknown-linux-musl
+# Install zig (cargo-zigbuild's cross-compilation backend)
+# macOS:
+brew install zig
+# Linux:
+sudo snap install zig --classic --beta  # or via your package manager
 
-# For linux/arm64
-rustup target add aarch64-unknown-linux-musl
-
-# Or install all supported targets at once
-rustup target add \
-    x86_64-unknown-linux-musl \
-    aarch64-unknown-linux-musl \
-    armv7-unknown-linux-musleabihf \
-    arm-unknown-linux-musleabihf \
-    i686-unknown-linux-musl \
-    powerpc64le-unknown-linux-musl \
-    s390x-unknown-linux-musl \
-    riscv64gc-unknown-linux-musl
+# Install cargo-zigbuild
+cargo install cargo-zigbuild
 ```
 
-#### macOS Cross-compilation Setup
-
-On macOS, you'll need a cross-compilation toolchain:
-
-```bash
-# Install musl cross-compilation tools
-brew install filosottile/musl-cross/musl-cross
-
-# Note: The musl-cross formula typically only includes x86_64 and aarch64 toolchains.
-# For other architectures, you may need additional toolchains or use Docker/remote builders.
-
-# Create a .cargo/config.toml in your project with:
-cat > .cargo/config.toml << 'EOF'
-[target.x86_64-unknown-linux-musl]
-linker = "x86_64-linux-musl-gcc"
-
-[target.aarch64-unknown-linux-musl]
-linker = "aarch64-linux-musl-gcc"
-
-# For other architectures, you'll need to install the appropriate cross-compiler
-# or use cargo-zigbuild which can target all platforms:
-# cargo install cargo-zigbuild
-# Then build with: cargo zigbuild --target <target>
-EOF
-```
+krust will automatically install the required rustup targets when building. If `cargo-zigbuild` is not installed, krust falls back to `cargo build` and will attempt to find a system cross-linker.
 
 Note: krust builds fully static binaries by default using musl libc, ensuring maximum portability across different Linux distributions and container environments.
 
@@ -166,18 +134,13 @@ This intelligent platform detection ensures your images support the same platfor
 
 ## Build Process
 
-krust builds your Rust application in an isolated environment:
+krust builds your Rust application and packages it into a container image:
 
-1. **Temporary build directory** - Each build uses a unique temporary directory via `--target-dir`
+1. **Target installation** - Automatically installs the required rustup target if missing
 2. **Static compilation** - Builds with `RUSTFLAGS="-C target-feature=+crt-static"` for musl targets
-3. **Cross-compilation** - Automatically configures the appropriate linker for the target platform
-4. **Binary extraction** - Copies the built binary from the temp directory for packaging
+3. **Cross-compilation** - Uses `cargo-zigbuild` for seamless cross-compilation (falls back to `cargo build` with system linkers)
+4. **Cached builds** - Uses `target/krust/` as the build directory, so incremental compilation works across runs
 5. **Container creation** - Packages the binary into a minimal OCI image
-
-This approach ensures:
-- No conflicts between concurrent builds
-- Clean builds without interference from previous compilations
-- Safe parallel execution of multiple krust instances
 
 ## Static Binaries
 
@@ -438,19 +401,14 @@ krust resolve -f deployment.yaml | kubectl apply -f -
 
 ## Troubleshooting
 
-### macOS: "linking with `cc` failed"
+### "linking with `cc` failed" or linker errors
 
-This error occurs when the cross-compilation toolchain is not properly configured. Make sure you:
-
-1. Install musl-cross: `brew install filosottile/musl-cross/musl-cross`
-2. Create `.cargo/config.toml` in your project with the appropriate linker configuration
-
-### "target may not be installed"
-
-Install the required target with rustup:
+Install `cargo-zigbuild` for seamless cross-compilation:
 ```bash
-rustup target add x86_64-unknown-linux-musl
+cargo install cargo-zigbuild
 ```
+
+If you prefer not to use zigbuild, install the appropriate system cross-linker for your target platform.
 
 ### Platform mismatch warning when running images
 
@@ -465,32 +423,11 @@ This is normal when building linux/amd64 images on Apple Silicon. The images wil
 git clone https://github.com/imjasonh/krust.git
 cd krust
 
-# Install cross-compilation toolchain (required for tests)
-# On macOS:
-brew install messense/macos-cross-toolchains/x86_64-unknown-linux-musl
-brew install messense/macos-cross-toolchains/aarch64-unknown-linux-musl
-
-# For full platform support, consider using cargo-zigbuild:
+# Install cargo-zigbuild for cross-compilation
 cargo install cargo-zigbuild
 
-# Install Rust targets (at minimum for tests)
-rustup target add x86_64-unknown-linux-musl
-rustup target add aarch64-unknown-linux-musl
-
-# For full platform support, add all targets:
-rustup target add \
-    armv7-unknown-linux-musleabihf \
-    arm-unknown-linux-musleabihf \
-    i686-unknown-linux-musl \
-    powerpc64le-unknown-linux-musl \
-    s390x-unknown-linux-musl \
-    riscv64gc-unknown-linux-musl
-
 # Install pre-commit hooks
-pip install pre-commit
-  or
-brew install pre-commit
-
+pip install pre-commit  # or: brew install pre-commit
 pre-commit install
 
 # Build and test
@@ -505,23 +442,17 @@ The project includes a comprehensive Makefile for common development tasks:
 ```bash
 # Building
 make build              # Build the project
-make build-verbose      # Build with verbose output
 
 # Testing (runs single-threaded to avoid env var races)
 make test              # Run all tests
 make test-unit         # Run unit tests only
 make test-e2e          # Run end-to-end tests only
-make test-verbose      # Run all tests with verbose output
 
 # Code quality
 make fmt               # Format code
 make lint              # Run clippy linter
 make check-fmt         # Check formatting without fixing
 make check             # Run all checks (format, lint, test)
-
-# Cross-compilation
-make setup-cross-compile    # Set up cargo config for cross-compilation
-make verify-cross-compile   # Verify cross-compilation setup
 ```
 
 ### Pre-commit hooks

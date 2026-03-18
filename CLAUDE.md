@@ -90,16 +90,13 @@ GAR has special handling for blob uploads that differs from the standard OCI spe
    - Blob uploads require `.to_vec()` due to reqwest's `'static` requirement for request bodies
    - This is acceptable as reqwest streams the data internally
 
-### Cross-Compilation on macOS
+### Cross-Compilation
 
-For Linux targets from macOS, you need:
-1. Target toolchain: `rustup target add x86_64-unknown-linux-musl`
-2. Cross-linker: `brew install filosottile/musl-cross/musl-cross`
-3. Cargo config to specify the linker:
-   ```toml
-   [target.x86_64-unknown-linux-musl]
-   linker = "x86_64-linux-musl-gcc"
-   ```
+krust requires `cargo-zigbuild` for cross-compilation. This eliminates the need for
+per-target system linkers and `.cargo/config.toml` linker configuration. If zigbuild is not
+available, krust fails with install instructions.
+
+Required targets are auto-installed via `rustup target add` when needed.
 
 ### Rust Static Linking
 
@@ -137,6 +134,7 @@ Key crates chosen:
 - `tar` + `flate2` - Layer creation
 - `sha256` - Digest calculation
 - `tracing` - Structured logging
+- `cargo-zigbuild` - Cross-compilation backend (external tool, not a crate dep)
 
 ## Testing Strategy
 
@@ -207,7 +205,7 @@ Potential enhancements identified:
 1. ~~Registry authentication support~~ ✓ Implemented (supports Docker credential helpers)
 2. ~~YAML resolution for Kubernetes deployments~~ ✓ Implemented (`krust resolve`)
 3. Multi-platform image manifests
-4. Build caching
+4. ~~Build caching~~ ✓ Implemented (persistent `target/krust/` directory)
 5. Image layer optimization
 6. Support for custom Dockerfile-like configs
 7. SBOM (Software Bill of Materials) generation
@@ -232,8 +230,8 @@ krust build example/hello-krust
 krust build -v 2>&1 | less
 
 # Check static linking
-file target/x86_64-unknown-linux-musl/release/binary
-ldd target/x86_64-unknown-linux-musl/release/binary  # should say "not a dynamic executable"
+file target/krust/x86_64-unknown-linux-musl/release/binary
+ldd target/krust/x86_64-unknown-linux-musl/release/binary  # should say "not a dynamic executable"
 
 # Verify pushed image
 crane manifest $(krust build --no-push example/hello-krust)
