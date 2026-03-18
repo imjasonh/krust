@@ -51,7 +51,8 @@ jobs:
         # ziglang pip package installs as python-zig, symlink to zig for cargo-zigbuild
         sudo ln -sf "$(which python-zig)" /usr/local/bin/zig
         zig version
-        command -v cargo-zigbuild || cargo install cargo-zigbuild
+        cargo-zigbuild --version 2>/dev/null || cargo install cargo-zigbuild
+        cargo-zigbuild --version
 
     - run: make check-fmt
     - run: make lint
