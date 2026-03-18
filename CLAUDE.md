@@ -204,7 +204,7 @@ Convenience wrapper that combines `resolve` with `kubectl apply`:
 Potential enhancements identified:
 1. ~~Registry authentication support~~ ✓ Implemented (supports Docker credential helpers)
 2. ~~YAML resolution for Kubernetes deployments~~ ✓ Implemented (`krust resolve`)
-3. Multi-platform image manifests
+3. ~~Multi-platform image manifests~~ ✓ Implemented (OCI image index with concurrent builds)
 4. ~~Build caching~~ ✓ Implemented (persistent `target/krust/` directory)
 5. Image layer optimization
 6. Support for custom Dockerfile-like configs

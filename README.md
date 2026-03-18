@@ -147,7 +147,7 @@ krust builds your Rust application and packages it into a container image:
 krust builds fully static binaries by default using:
 - musl libc for Linux targets
 - `RUSTFLAGS="-C target-feature=+crt-static"` for static linking
-- Distroless static base image (`gcr.io/distroless/static:nonroot`)
+- Distroless static base image (`cgr.dev/chainguard/static:latest`)
 
 This ensures your applications work across all Linux distributions without dependency issues.
 
@@ -289,13 +289,14 @@ Arguments:
   [CARGO_ARGS]...  Additional cargo build arguments
 
 Options:
-  -i, --image <IMAGE>        Target image reference (overrides KRUST_REPO)
-      --platform <PLATFORM>  Target platform [default: linux/amd64]
+      --platform <PLATFORM>  Target platforms (comma-separated, auto-detected from base image if not specified)
       --no-push              Skip pushing the image to registry
       --tag <TAG>            Tag to apply to the image (e.g., latest, v1.0.0)
-      --repo <REPO>          Repository prefix (uses KRUST_REPO env var)
-  -v, --verbose              Enable verbose logging
+      --repo <REPO>          Repository prefix (defaults to KRUST_REPO env var)
   -h, --help                 Print help
+
+Global Options:
+  -v, --verbose              Enable verbose logging
 ```
 
 ### Resolve Command
@@ -310,10 +311,12 @@ Arguments:
 
 Options:
       --platform <PLATFORM>  Target platforms (comma-separated)
-      --repo <REPO>          Repository prefix (uses KRUST_REPO env var)
+      --repo <REPO>          Repository prefix (defaults to KRUST_REPO env var)
       --tag <TAG>            Tag to apply to built images
-  -v, --verbose              Enable verbose logging
   -h, --help                 Print help
+
+Global Options:
+  -v, --verbose              Enable verbose logging
 ```
 
 #### Usage Examples
@@ -374,10 +377,12 @@ Arguments:
 
 Options:
       --platform <PLATFORM>  Target platforms (comma-separated)
-      --repo <REPO>          Repository prefix (uses KRUST_REPO env var)
+      --repo <REPO>          Repository prefix (defaults to KRUST_REPO env var)
       --tag <TAG>            Tag to apply to built images
-  -v, --verbose              Enable verbose logging
   -h, --help                 Print help
+
+Global Options:
+  -v, --verbose              Enable verbose logging
 ```
 
 #### Usage Examples
@@ -398,6 +403,14 @@ The `apply` command is equivalent to:
 ```bash
 krust resolve -f deployment.yaml | kubectl apply -f -
 ```
+
+### Version Command
+
+```
+krust version
+```
+
+Prints the current krust version.
 
 ## Troubleshooting
 
@@ -488,7 +501,7 @@ make test-e2e          # End-to-end tests only
 cargo test -- --test-threads=1
 
 # Run with verbose output
-make test-verbose
+cargo test --verbose -- --test-threads=1
 ```
 
 ## License
