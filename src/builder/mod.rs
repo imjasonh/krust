@@ -32,8 +32,8 @@ impl RustBuilder {
 
     /// Check that cargo-zigbuild is available, or bail with install instructions.
     fn require_zigbuild() -> Result<()> {
-        let available = Command::new("cargo")
-            .args(["zigbuild", "--version"])
+        let available = Command::new("cargo-zigbuild")
+            .arg("--version")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
